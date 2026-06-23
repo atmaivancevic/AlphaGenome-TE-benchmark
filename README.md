@@ -4,7 +4,7 @@
 
 Sequence-to-function (S2F) models like AlphaGenome and Borzoi predict regulatory activity directly from DNA sequence. But their behaviour on complex variants, including regulatory elements derived from transposable elements, is still untested. Here, we benchmark AlphaGenome against CRISPR-validated TE enhancers and polymorphic TE insertions/deletions. 
 
-Scripts are organised by figure under `scripts/` (`fig1_baseline_chromatin/`, `fig2_polymorphic_TE_example/`, `fig3_polymorphic_TE_eQTLs/`, `fig4_5_LTR10_CRISPR_comparison/`, `fig6_AP1_perturbation/`, `generate_supp_tables/`). 
+Scripts are organised by figure/section under `scripts/` (`fig1_baseline_chromatin/`, `fig2_polymorphic_TE_example/`, `fig3_polymorphic_TE_eQTLs/`, `fig4_5_LTR10_CRISPR_comparison/`, `fig6_AP1_perturbation/`, `generate_supp_tables/`). 
 
 ## Software
 
