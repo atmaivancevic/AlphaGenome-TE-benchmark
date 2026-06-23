@@ -1,31 +1,16 @@
 """
-Build Supp Table 3 (polymorphic TE insertion catalog) by joining the filtered
-solo TE INS VCF (output of filter_solo_TE_INS_vcf.py, hg38-anchored, SVAN-
-annotated, no GTs) with the SVIM-asm hg38 genotyped BCF (per-sample GTs, no
-SVAN).
+Build Supp Table 3 (polymorphic TE insertion catalog): join the filtered solo TE
+INS VCF (from filter_solo_TE_INS_vcf.py) with the genotyped BCF. Per-variant stats
+(AC/AN/AF/MAF/HWE/...) come from the BCF INFO; per-sample GTs build the carrier
+lists + NA12878 GT + the na12878_00 / eqtl_testable_MAGE260 flags. Multi-allelic
+sites are skipped (~378 of 29,839, ~1.3%). Writes a TSV (xlsx optional via --xlsx;
+the workbook is composed manually).
 
-Both files are matched on variant ID (`SvimAsm########`). The genotyped BCF
-already provides AC, AN, AF, MAF, NS, F_MISSING, AC_Hom, AC_Het, AC_Hemi, HWE,
-ExcHet in INFO — no need to recompute. Per-sample iteration is used only to
-build the carrier sample-ID lists (carriers_hom, carriers_het) and the flagship
-sample's GT (NA12878 by default).
-
-Multi-allelic sites (multiple comma-separated ALTs at the same position) are
-skipped: the genotyped BCF still contains some after the `bcftools merge` step
-in the Schloissnig pipeline, and packing N alleles into one Supp Table row makes
-per-variant stats ambiguous. Affects ~378 of 29,839 solo MEI records (~1.3%).
-A future version will split these via `bcftools norm -m -` so each allele
-becomes its own row.
-
-Output is written as a new tab in the SuppTables.xlsx workbook (existing tabs
-preserved). Optionally also dumps a TSV alongside.
-
-Usage:
-    python scripts/generate_supp_tables/build_supp_table3_polymorphic_TE_insertions.py \\
-        --filtered-vcf data/schloissnig_2025/vcf/solo_TE_INS.svim_asm.hg38.SVAN.vcf.gz \\
-        --gt-bcf       data/schloissnig_2025/vcf/svim.asm.hg38.bcf \\
-        --xlsx         supptables/SuppTables.xlsx \\
-        --tsv          supptables/supp_table_3_polymorphic_TE_insertions.tsv
+Example usage:
+python scripts/generate_supp_tables/build_supp_table3_polymorphic_TE_insertions.py \
+    --filtered-vcf data/schloissnig_2025/vcf/solo_TE_INS.svim_asm.hg38.SVAN.vcf.gz \
+    --gt-bcf       data/schloissnig_2025/vcf/svim.asm.hg38.bcf \
+    --tsv          supptables/supp_table_3_polymorphic_TE_insertions.tsv
 """
 import argparse, gzip, re, subprocess
 import pandas as pd

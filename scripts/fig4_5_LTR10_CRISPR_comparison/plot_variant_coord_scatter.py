@@ -1,36 +1,18 @@
 """
-Coordinate scatter of AlphaGenome RNA-seq variant effects for a single LTR10
-CRISPRi deletion. X = gene TSS, Y = AG raw_score (log2FC), point colour by
-|quantile_score| threshold. Reproduces the layout of
-plot_variant_effects_coord_scatterplot() from scripts/wip/old/helper_functions.py
-with one substantive change: instead of `track_filter='max_effect'` (pick the
-single highest-|q| track per gene), per-gene scores here are the **mean of the
-strand-specific RNA tracks only** — i.e. unstranded polyA tracks are dropped
-before averaging (AG track aggregation convention, 2026-05-11).
+Coordinate scatter of AlphaGenome RNA-seq variant effects for one LTR10 CRISPRi
+deletion: X = gene TSS, Y = AG raw_score (log2FC), coloured by |quantile_score|.
+Per-gene score = mean of the strand-specific RNA tracks (unstranded polyA dropped;
+AG track-aggregation convention). For HCT116 this collapses to the single stranded
+total RNA-seq track. (Fig 4 LTR10 helper.)
 
-For HCT116 (EFO:0002824), AG emits two tracks per gene:
-  - `total RNA-seq`  (track_strand = + or -, matched to gene strand)  ← KEPT
-  - `polyA plus RNA-seq`  (track_strand = '.', unstranded)            ← DROPPED
-So the per-gene score collapses to the single stranded total RNA-seq track for
-HCT116. The same rule generalises to GM12878 (which has two stranded tracks,
-so the average is over both).
-
-Inputs:
-  --variants     data/LTR10_variants.tab
-  --rna-csv      results/AG_LFC_LTR10_CRISPR/<variant>_<cell>.csv
-  --gencode      data/gencode.v46.annotation.feather (TSS lookup)
-
-Usage (LTR10.ATG12 in HCT116, matching the legacy call):
-    python scripts/fig4_5_LTR10_CRISPR_comparison/plot_variant_coord_scatter.py \\
-        --variant LTR10.ATG12 \\
-        --cell-line HCT116 \\
-        --variants data/LTR10_variants.tab \\
-        --rna-csv results/AG_LFC_LTR10_CRISPR/LTR10.ATG12_HCT116.csv \\
-        --gencode data/gencode.v46.annotation.feather \\
-        --gene-types protein_coding \\
-        --color-threshold 0.9 \\
-        --ylim -0.3 0.3 \\
-        --output figures/FIG4_LTR10/LTR10.ATG12_HCT116_coord_scatter.pdf
+Example usage (LTR10.ATG12 in HCT116):
+python scripts/fig4_5_LTR10_CRISPR_comparison/plot_variant_coord_scatter.py \
+    --variant LTR10.ATG12 --cell-line HCT116 \
+    --variants data/LTR10_variants.tab \
+    --rna-csv results/AG_LFC_LTR10_CRISPR/LTR10.ATG12_HCT116.csv \
+    --gencode data/gencode.v46.annotation.feather \
+    --gene-types protein_coding --color-threshold 0.9 --ylim -0.3 0.3 \
+    --output figures/FIG4_LTR10/LTR10.ATG12_HCT116_coord_scatter.pdf
 """
 import argparse
 from pathlib import Path
@@ -143,18 +125,13 @@ ax.scatter(per_gene['TSS'], per_gene['raw_score'],
            s=per_gene['cat'].map(SIZES),
            alpha=0.75, edgecolors='none', linewidth=0)
 
-# Label coloured genes, with adjustText collision avoidance + leader lines.
-# Labels start at the dot and adjust_text iteratively pushes them apart;
-# arrowprops draws a thin connector back to the dot (matches the legacy
-# 'ARL14EPL ──•' style in Fig 4D).
+# Label coloured genes with adjustText collision avoidance + leader lines.
 texts = []
 for _, r in per_gene[per_gene['cat'] != 'minimal'].iterrows():
     texts.append(ax.text(r['TSS'], r['raw_score'], r['gene_name'],
                          fontsize=11, alpha=0.9, ha='center'))
 if texts:
-    # Aggressive collision avoidance: wider bbox padding, stronger inter-label
-    # repulsion, push away from scatter points too so labels don't sit on dots.
-    # Leader lines are drawn from the moved label back to the dot.
+    # Aggressive collision avoidance: wide padding, strong repulsion, push off points.
     adjust_text(
         texts, ax=ax,
         arrowprops=dict(arrowstyle='-', color='black', lw=0.5, alpha=0.6),

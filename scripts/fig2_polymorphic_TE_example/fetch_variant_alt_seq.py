@@ -1,23 +1,19 @@
 #!/usr/bin/env python3
 """
-Fetch hg38 anchor + ALT sequence for one or more Schloissnig SVIM-asm variant IDs.
+Fetch hg38 anchor + ALT sequence for one or more Schloissnig SVIM-asm variant
+IDs, writing a tab file (ID, CHROM, POS, REF, ALT) for the AG variant-prediction
+and scoring scripts. The literal ALT base string (anchor base + inserted seq) is only in
+the BCF, so it's pulled here rather than from the supp tables.
 
-Writes a tab-delimited file with the columns required by
-`scripts/fig2_polymorphic_TE_example/plot_polymorphic_TE_insertion.py`: ID, CHROM, POS, REF, ALT.
+Example usage (a few variants by ID):
+python scripts/fig2_polymorphic_TE_example/fetch_variant_alt_seq.py \
+    --ids SvimAsm00060017 SvimAsm00022857 SvimAsm00107233 SvimAsm00133580 \
+    --out data/fig3_tier1_variants.tab
 
-Input  : Schloissnig hg38 SVIM-asm BCF (default: the no-GT SVAN_1.3 file —
-         smaller, same coordinates + ALT seqs as the genotyped BCF).
-Output : tab file (one row per variant) plus a stderr log line per ID with
-         insert length so downstream issues are obvious.
-
-Why a separate helper: the eQTL prototype's Supp Table 2 only stores
-alt_length, not the actual inserted sequence — for AG variant calls we need
-the literal ALT base string (anchor + insert), which lives only in the BCF.
-
-Usage:
-    python scripts/fig2_polymorphic_TE_example/fetch_variant_alt_seq.py \\
-        --ids SvimAsm00060017 SvimAsm00042027 SvimAsm00107233 \\
-        --out data/fig3_tier1_variants.tab
+Example usage (bulk, IDs from a file):
+python scripts/fig2_polymorphic_TE_example/fetch_variant_alt_seq.py \
+    --ids $(cat /tmp/variant_ids_1322.txt | tr '\n' ' ') \
+    --out data/fig3_all_testable_variants.tab
 """
 import argparse, subprocess, sys, shutil
 

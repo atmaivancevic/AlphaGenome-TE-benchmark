@@ -1,20 +1,16 @@
 #!/usr/bin/env Rscript
 #
-# scripts/fig3_polymorphic_TE_eQTLs/cross_cohort_compare.R
+# Companion to eqtl_matrixeqtl_pipeline.R. Joins the MAGE-260 and GEUVADIS-121
+# eQTL tables on (variant_id, gene_symbol) for a candidate pick set, producing a
+# side-by-side cross-cohort table. The candidates TSV needs columns:
+# variant_id, target_gene, role.
 #
-# Companion to scripts/eqtl_matrixeqtl_pipeline.R. Joins
-# MAGE-260 and GEUVADIS-121 eQTL tables on (variant_id, gene_symbol) for a
-# given candidate pick set, producing a side-by-side cross-cohort table.
-#
-# Usage:
-#   Rscript scripts/fig3_polymorphic_TE_eQTLs/cross_cohort_compare.R \
-#     --candidates results/eqtl_matrixeqtl_MAGE260/candidate_picks_working_set.tsv \
-#     --mage_eqtl  results/eqtl_matrixeqtl_MAGE260/all_polymorphicTE_eqtls.tsv \
-#     --geu_eqtl   results/eqtl_matrixeqtl_GEUVADIS121/all_polymorphicTE_eqtls.tsv \
-#     --out        results/eqtl_matrixeqtl_GEUVADIS121/candidate_picks_MAGE_vs_GEU.tsv
-#
-# The candidates TSV must have columns: variant_id, target_gene, role
-# (free-text annotation describing why the variant is in the working set).
+# Example usage:
+# Rscript scripts/fig3_polymorphic_TE_eQTLs/cross_cohort_compare.R \
+#   --candidates results/eqtl_matrixeqtl_MAGE260/candidate_picks_working_set.tsv \
+#   --mage_eqtl  results/eqtl_matrixeqtl_MAGE260/all_polymorphicTE_eqtls.tsv \
+#   --geu_eqtl   results/eqtl_matrixeqtl_GEUVADIS121/all_polymorphicTE_eqtls.tsv \
+#   --out        results/eqtl_matrixeqtl_GEUVADIS121/candidate_picks_MAGE_vs_GEU.tsv
 
 suppressPackageStartupMessages({
   library(optparse); library(dplyr); library(readr)

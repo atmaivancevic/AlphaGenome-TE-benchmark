@@ -1,26 +1,21 @@
 """
-Compare experimental vs predicted ChIP-seq peak signal.
+Compare experimental vs AlphaGenome-predicted ChIP-seq peak signal. Takes two
+narrowPeak files with identical peak coordinates and plots signalValue (column 7)
+with Pearson + Spearman correlations. --figure-mode renders a small square panel
+for a multi-panel grid; --highlight-tsv overlays flagged outlier peaks.
 
-Takes two narrowPeak files (experimental and predicted) with identical
-peak coordinates, and produces a scatter plot of signalValue (column 7)
-with Pearson and Spearman correlations.
+Example usage (standard scatter plot):
+python scripts/fig1_baseline_chromatin/plot_peak_correlation.py \
+    --experimental data/encode_h3k27ac/peaks/merged/EFO_0002824_HCT116.narrowPeak.gz \
+    --predicted results/AG_predicted_h3k27ac_batched/EFO_0002824_HCT116/EFO_0002824_HCT116.narrowPeak.gz \
+    --label HCT116 \
+    --output figures/HCT116_exp_vs_pred.pdf
 
-Two render modes:
-  default      — standalone 6x6 in panel with axis titles + boxed stats.
-  --figure-mode — small square panel sized for a multi-panel figure grid:
-                  no axis titles (add shared labels in the layout tool),
-                  small fonts, and fixed internal margins so every panel
-                  tiles and aligns. Panel side set by --panel-pt.
+Example usage (e.g. to make it look like a grid panel, add to the above):
+... --figure-mode
 
-Usage:
-    python scripts/fig1_baseline_chromatin/plot_peak_correlation.py \
-        --experimental data/encode_h3k27ac/peaks/merged/EFO_0002824_HCT116.narrowPeak.gz \
-        --predicted results/AG_predicted_h3k27ac_batched/EFO_0002824_HCT116/EFO_0002824_HCT116.narrowPeak.gz \
-        --label HCT116 \
-        --output figures/HCT116_exp_vs_pred.pdf
-
-    # Fig 1A grid panel (111 pt square, no axis titles):
-    python scripts/fig1_baseline_chromatin/plot_peak_correlation.py ... --figure-mode --panel-pt 111
+Example usage (e.g. to highlight outliers):
+... --highlight-tsv supptables/supp_table_fig1_BC_outliers.tsv --label-genes NFKBIA
 """
 
 import os, argparse, gzip

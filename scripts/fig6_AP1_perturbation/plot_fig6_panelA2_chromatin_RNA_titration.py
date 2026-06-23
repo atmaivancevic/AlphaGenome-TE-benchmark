@@ -1,34 +1,19 @@
 """
-Fig 6 Panel A2 — AP1 motif titration: AG-predicted downstream chromatin +
-target gene (ATG12) RNA. Companion to plot_fig6_panelA1_TF_titration.py
-(which handles the upstream TF binding panel).
+Fig 6 Panel A2 — AP1 motif titration: AG-predicted downstream chromatin + ATG12
+RNA. Three stacked subplots over intact AP1 motifs (0-200), each own y-axis:
+H3K27ac + H3K4me1 (shared), ATAC, ATG12 RNA. All saturate at ~50 motifs
+(H3K4me1/ATAC even drop below WT past ~100) — the training-distribution ceiling.
+Companion to plot_fig6_panelA1_TF_titration.py.
 
-Three stacked subplots sharing one x-axis (intact AP1 motifs 0-200), each
-with its own raw y-axis (no normalisation, no twin axes):
-  1. Top:    H3K27ac (green) + H3K4me1 (purple) sharing one y-axis
-             (~0–3500; H3K4me1 occupies the lower portion since its max
-             is ~28% of H3K27ac's)
-  2. Middle: ATAC (light blue) own y-axis (~0–2.5)
-  3. Bottom: ATG12 RNA-seq (dark blue) own y-axis (~0.158–0.170)
-
-The "all chromatin marks saturate at ~50 motifs" pattern is visible
-across all three subplots independently — strongest possible visual
-support for the training-distribution-ceiling claim.
-
-H3K4me1 and ATAC actually drop BELOW their WT (20 motif) baselines past
-~100 motifs — AG predicts overshooting AP1 density is detrimental to those
-marks, an even stronger version of the training-distribution ceiling than
-H3K27ac (which plateaus high rather than dropping).
-
-Usage:
-    python scripts/fig6_AP1_perturbation/plot_fig6_panelA2_chromatin_RNA_titration.py \\
-        --chromatin-csv \\
-            results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element.csv \\
-            results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element_INS.csv \\
-        --rna-csv \\
-            results/AG_perturbation_LTR10_ATG12_AP1/predict_RNA_at_ATG12_gene.csv \\
-            results/AG_perturbation_LTR10_ATG12_AP1/predict_RNA_at_ATG12_gene_INS.csv \\
-        --output figures/FIG6_FINAL/panelA2_chromatin_RNA_titration.pdf
+Example usage:
+python scripts/fig6_AP1_perturbation/plot_fig6_panelA2_chromatin_RNA_titration.py \
+    --chromatin-csv \
+        results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element.csv \
+        results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element_INS.csv \
+    --rna-csv \
+        results/AG_perturbation_LTR10_ATG12_AP1/predict_RNA_at_ATG12_gene.csv \
+        results/AG_perturbation_LTR10_ATG12_AP1/predict_RNA_at_ATG12_gene_INS.csv \
+    --output figures/FIG6_FINAL/panelA2_chromatin_RNA_titration.pdf
 """
 import argparse
 from pathlib import Path
@@ -81,9 +66,8 @@ TITRATION = {
     'LTR10.ATG12_add160':   180,
     'LTR10.ATG12_add170':   190,
     'LTR10.ATG12_add180':   200,
-    # Note: add190/200/210/220 alleles exist in the variant tab (210-240
-    # motifs) but are excluded — at the user's call we cap x-axis at 200
-    # motifs since the plateau is fully established by 100.
+    # add190-220 alleles (210-240 motifs) exist in the tab but are excluded;
+    # x-axis capped at 200 (plateau established by ~100).
 }
 
 def raw_curve(csv_paths, track_substring, keep_stranded_only=False):

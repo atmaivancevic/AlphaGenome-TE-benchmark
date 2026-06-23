@@ -1,12 +1,19 @@
 """
-Bubble plot of GIGGLE TE enrichment in ENCODE H3K27ac peaks.
+Bubble plot of GIGGLE TE-family enrichment in ENCODE H3K27ac peaks (bubble size
+= GIGGLE score, colour = odds ratio). The default TE set comes from the filtered
+table (filtered_OR5_score100_overlaps40.tab); enrichment is plotted across all
+biosamples from the unfiltered results.
 
-Uses the 52 TE subfamilies that passed filters (OR>5, score>=100, overlaps>40)
-in at least one biosample, but plots their enrichment across ALL biosamples
-from the unfiltered GIGGLE results.
+Example usage (Supp Fig S2: top 25 TEs x 40 biosamples):
+python scripts/fig1_baseline_chromatin/plot_giggle_bubbles.py --top-TEs 25 --top-biosamples 40 \
+    --outdir suppfigures/s2
 
-Usage:
-    python scripts/fig1_baseline_chromatin/plot_giggle_bubbles.py [--top-TEs N] [--top-biosamples N]
+Example usage (Fig 1 Panel D: curated 8 x 8 mini-bubble):
+python scripts/fig1_baseline_chromatin/plot_giggle_bubbles.py \
+    --keep-biosamples "HCT116,GM12878,K562,OCI-LY3,H1,HUES6,placenta,PC-9" \
+    --keep-TEs "LTR10A,LTR10F,LTR2B,LTR7,LTR5_Hs,MER41B,MER11D,LTR8" \
+    --width 290 --height 200 --render-scale 2 --size-max 14 \
+    --outdir figures/FIG1_FINAL/Fig1D_giggle_plot
 """
 
 import os, argparse
@@ -54,15 +61,13 @@ parser.add_argument('--render-scale', type=float, default=1.0,
 args = parser.parse_args()
 SCALE = args.render_scale
 
-# 52 TE subfamilies that passed filters (OR>5, score>=100, overlaps>40)
+# TE subfamilies that passed the filter (OR>5, score>=100, overlaps>40)
 filtered = pd.read_csv(os.path.join(PROJECT_ROOT,
     'data/encode_h3k27ac/giggle_results/filtered_OR5_score100_overlaps40.tab'), sep='\t')
 keep_tes = filtered['repeat'].unique().tolist()
 
-# Load unfiltered results, keep only those 52 subfamilies (unless --keep-TEs
-# specifies an explicit list, in which case use that instead — supports
-# picking TE families that didn't pass the global OR/score/overlap filter
-# but are biologically interesting for a curated panel).
+# Load unfiltered results, keep only those subfamilies (or an explicit
+# --keep-TEs list, which overrides the filter).
 df = pd.read_csv(os.path.join(PROJECT_ROOT,
     'data/encode_h3k27ac/giggle_results/h3k27ac_vs_TEs_rankedByScore.tab'), sep='\t')
 
@@ -156,9 +161,7 @@ fig = px.scatter(df, x=x_col, y=y_col,
                          'repeat': y_label if args.flip else x_label},
                  category_orders=cat_orders)
 
-# Auto-shrink margins/font when the user explicitly downsizes the figure
-# (e.g. for a main-figure mini panel at 260 × 200 pt). Keyed on the DESIGN
-# size, then scaled by SCALE so the placed-at-1/scale result is unchanged.
+# Auto-shrink margins/fonts when the figure is downsized (e.g. the mini panel).
 _small = (args.width and args.width < 400) or (args.height and args.height < 300)
 _top_margin = (50 if _small else 120) * SCALE
 _font_size = (7 if _small else 10) * SCALE
@@ -167,12 +170,7 @@ fig.update_layout(template='plotly_white', autosize=False, width=w, height=h,
                   margin=dict(l=10 * SCALE, r=10 * SCALE, t=_top_margin, b=10 * SCALE),
                   coloraxis_colorbar=dict(len=0.75, yanchor='top', y=1, x=1.02))
 
-# No in-figure size legend — Plotly Express renders shape circles at a
-# slightly different effective scale from scatter markers (different
-# rendering paths), so an in-figure reference would mislead. The size
-# legend is built manually in Illustrator using existing data bubbles
-# as size references (e.g. H1 + MER41B ~50, placenta + LTR5_Hs ~100,
-# placenta + LTR10A ~500, HUES6 + LTR5_Hs ~1000).
+# No in-figure size legend (Plotly sizing is unreliable for a reference).
 fig.update_yaxes(tickfont_size=9 * SCALE, ticks='outside', ticklen=4 * SCALE,
                  showline=True, linecolor='black', linewidth=1 * SCALE,
                  mirror=True, range=y_range,

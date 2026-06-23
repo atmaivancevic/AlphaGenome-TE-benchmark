@@ -1,18 +1,12 @@
-#!/usr/bin/env bash
-# Merge narrowPeak BEDs for multi-experiment AG training tracks.
-# For each H3K27ac biosample in the AG training manifest:
-#   - if multiple ENCODE experiments map to one biosample (e.g. 38 of 159
-#     in the full human set), concat + bedtools merge averaging score
-#     columns
-#   - if one experiment, pass through with a numeric (chrom,start) sort
-#     applied (ENCODE narrowPeaks are typically lex-sorted on POS, which
-#     would otherwise collapse the 1Mb-cache hit rate in
-#     scripts/fig1_baseline_chromatin/predict_peak_signal_batched.py)
-#
-# Output: one 10-column narrowPeak per biosample.
-# Manifest defaults to the full Avsec 2026 H3K27ac track list (159 human +
-# 31 mouse) — pass arg 4 to override (e.g., the PASS/WARNING-filtered
-# 133-track subset used in the original Apr 2026 run).
+#!/bin/bash
+
+## Merge ENCODE H3K27ac narrowPeaks per biosample. Multi-experiment biosamples
+## are concatenated + merged with bedtools (mean scores); single-experiment ones pass
+## through with a numeric (chrom,start) sort.
+## Output: one 10-column narrowPeak per biosample.
+##
+## Example usage:
+## bash scripts/fig1_baseline_chromatin/merge_encode_h3k27ac_peaks.sh
 set -euo pipefail
 
 ENRICHED="${1:-data/encode_h3k27ac/peak_resolution_human.tsv}"

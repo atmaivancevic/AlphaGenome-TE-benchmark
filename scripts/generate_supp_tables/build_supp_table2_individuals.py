@@ -1,37 +1,16 @@
 """
 Build Supp Table 2 (per-donor cohort flags) for the Schloissnig 908 phased
-individuals. One row per donor with population/sex, Tier 1 RNA-seq flags
-(MAGE / GEUVADIS), Tier 2 chromatin flags (ATAC / ChIP / DNase across 7
-sources), aggregated tier counts, and per-source accessions.
+individuals. One row per donor: population/sex, Tier 1 RNA-seq flags (MAGE /
+GEUVADIS), Tier 2 chromatin flags (ATAC / ChIP / DNase across 7 sources),
+aggregated tier counts, and per-source accessions. Inputs are listed in the
+README provenance block. Output: supptables/supp_table_2_individuals.tsv.
 
-Inputs (all already in repo, see README provenance block):
-- data/schloissnig_2025/phased_908_samples.txt          (908 1KGP IDs)
-- data/schloissnig_2025/bundle_extracted/sample.tsv     (pop/sex/sample)
-- data/rna_cohorts/mage_metadata.tsv                    (kgp_id ↔ coriell_id)
-- data/rna_cohorts/geuvadis_samples.txt                 (NA/HG IDs)
-- data/rna_cohorts/mage_ena_fastq.tsv                   (per-run FASTQ URLs)
-- data/rna_cohorts/geuvadis_ena_fastq.tsv               (per-run FASTQ URLs)
-- data/lcl_chromatin/kumasaka2019_ENA_PRJEB28318_analysis.tsv
-- data/lcl_chromatin/waszak2015_E-MTAB-3657.sdrf.txt
-- data/lcl_chromatin/grubert2015_GSE58852_series_matrix.txt.gz
-- data/lcl_chromatin/degner2012_GSE31388_series_matrix.txt.gz
-- data/lcl_chromatin/afgr_atac_ENCODE.tsv
-- data/lcl_chromatin/encode_NA12878_NA19238.tsv
+GM <-> NA: 1KGP IDs use HG/NA; Coriell uses GM for HapMap YRI/CEU lines
+(GM18498 = NA18498). MAGE gives the explicit map; otherwise NA->GM substring sub.
 
-Outputs:
-- supptables/supp_table_2_individuals.tsv
-- new sheet "Suppl Table 2 Individuals" in supptables/SuppTables.xlsx (other
-  sheets preserved)
-
-GM ↔ NA convention: 1KGP IDs use HG/NA prefix; Coriell catalog uses GM for
-HapMap-era YRI/CEU lines (GM18498 ≡ NA18498). MAGE provides the explicit
-coriell_id ↔ kgp_id map; for samples missing from MAGE we apply the
-NA→GM substring substitution as a heuristic.
-
-Usage:
-    python scripts/generate_supp_tables/build_supp_table2_individuals.py \\
-        --xlsx supptables/SuppTables.xlsx \\
-        --tsv  supptables/supp_table_2_individuals.tsv
+Example usage:
+python scripts/generate_supp_tables/build_supp_table2_individuals.py \
+    --tsv supptables/supp_table_2_individuals.tsv
 """
 import argparse, csv, gzip, re, sys
 from pathlib import Path

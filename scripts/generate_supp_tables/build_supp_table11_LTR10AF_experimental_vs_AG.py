@@ -1,38 +1,16 @@
 """
-Build Supp Table 11 — experimental vs AlphaGenome-predicted chromatin peak
-scores across all 650 merged LTR10A/F elements. One row per element.
+Build Supp Table 11 — experimental vs AlphaGenome-predicted chromatin peak scores
+(H3K27ac, FOSL1) across all 650 merged LTR10A/F elements (one row per element).
+Variant-level companion to Supp Table 10: "does AG rank LTR10 enhancer activity
+correctly genome-wide?". 113/650 elements have experimental peaks; 8 fragments are
+CRISPR-validated. Adds derived length_bp + family columns. Input:
+data/650_LTR10AF_with_experimental_and_predicted.tsv.
+TODO: swap in-house HCT116 H3K27ac for ENCODE HCT116; add AG ATAC + H3K4me1 columns.
 
-This is the variant-level companion to Supp Table 10's gene-level CRISPR/AG
-comparison: where Supp 10 asks "does AG predict the gene-expression effect
-of CRISPR-perturbing each of 6 LTR10 enhancers?", Supp 11 asks "does AG
-correctly rank the H3K27ac/FOSL1 activity of LTR10 enhancers genome-wide?".
-
-Source data (already built by prior work):
-  data/650_LTR10AF_with_experimental_and_predicted.tsv
-    - 650 merged LTR10A/F elements (chr1-22 + chrX), peak scores from
-      Ivancevic 2024 in-house HCT116 H3K27ac + FOSL1 ChIP-seq (113/650
-      elements have experimental peak signal; rest are NA)
-    - AG predictions generated with scripts/wip/predict_baseline_ChIP.py
-    - 8 elements marked CRISPR_validated (2 fragments each for LTR10.ATG12
-      and LTR10.XRCC4 — the merged set splits these long elements; the
-      remaining 4 CRISPR-tested elements are single fragments)
-
-This script adds two derived columns (length_bp, family) and writes the
-result to supptables/. Notes / crispr_target_gene columns are intentionally
-omitted — the CRISPR_validated column already encodes both.
-
-TODO (deferred, tracked in todos):
-  - Replace in-house HCT116 H3K27ac peak scores with ENCODE HCT116 H3K27ac
-    (matches the data AG was trained on; current in-house calls are
-    callable but use slightly different peak-calling settings).
-  - Score AG ATAC + H3K4me1 across all 650 elements and append columns
-    (currently Supp 11 has only FOSL1 + H3K27ac since those are what
-    scripts/wip/predict_baseline_ChIP.py was originally run for).
-
-Usage:
-    python scripts/generate_supp_tables/build_supp_table11_LTR10AF_experimental_vs_AG.py \\
-        --input data/650_LTR10AF_with_experimental_and_predicted.tsv \\
-        --tsv   supptables/supp_table_11_LTR10AF_experimental_vs_AG.tsv
+Example usage:
+python scripts/generate_supp_tables/build_supp_table11_LTR10AF_experimental_vs_AG.py \
+    --input data/650_LTR10AF_with_experimental_and_predicted.tsv \
+    --tsv   supptables/supp_table_11_LTR10AF_experimental_vs_AG.tsv
 """
 import argparse
 from pathlib import Path

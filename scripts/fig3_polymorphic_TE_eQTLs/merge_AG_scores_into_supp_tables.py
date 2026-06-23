@@ -1,47 +1,20 @@
 """
-Merge AlphaGenome per-(variant, gene) RNA + per-variant chromatin scores into
-Supplementary Tables 4 and 5.
+Merge AlphaGenome per-(variant, gene) RNA + per-variant chromatin scores into the
+eQTL supplementary tables (4/5 for INS, 7/8 for DEL). Adds 8 columns per table:
+AG_RNA_raw/quantile_score and AG_{H3K27ac,H3K4me1,ATAC}_raw/quantile_score,
+placed next to the observed eQTL beta/p/q for direct comparison.
 
-Inputs (two AG scoring masters):
-- results/AG_LFC_polymorphic_TE/master_ranked_GM12878.csv
-    Per-(variant, gene, RNA-seq-track) raw_score + quantile_score from
-    scripts/score_variant_lfc.py. RNA scores are aggregated to one number
-    per (variant, gene) by taking the mean across all gene-strand-matched
-    RNA-seq tracks AG returned for GM12878 — typically 3: stranded total +
-    stranded polyA + unstranded polyA. This averaging follows the
-    `--track_filter average` convention from our prior baseline-scoring
-    pipeline (scripts/predict_baseline_RNA.py).
-- results/AG_chromatin_polymorphic_TE/master_chromatin_GM12878.csv
-    Per-(variant, mark) raw_score + quantile_score from
-    scripts/score_variant_chromatin.py. GM12878 has exactly one track per
-    mark for our 3 chosen marks (H3K27ac, H3K4me1, ATAC), so no
-    aggregation is needed.
+Inputs: the AG scoring from score_variant_lfc.py (RNA, averaged across
+gene-strand-matched RNA-seq tracks) and score_variant_chromatin.py (one track per
+mark in GM12878). raw_score = predicted ALT-REF effect (LFC for RNA, log2-sum DIFF
+for chromatin); quantile_score = AG percentile vs a genome-wide null, in [-1, +1].
+Unmatched (variant, gene) pairs get NA.
 
-Outputs (8 new AG columns per supp table, in this order):
-- AG_RNA_raw_score, AG_RNA_quantile_score
-- AG_H3K27ac_raw_score, AG_H3K27ac_quantile_score
-- AG_H3K4me1_raw_score, AG_H3K4me1_quantile_score
-- AG_ATAC_raw_score, AG_ATAC_quantile_score
+Example usage (INS -> Supp 4/5):
+python scripts/fig3_polymorphic_TE_eQTLs/merge_AG_scores_into_supp_tables.py
 
-Placement: appended after the existing eQTL columns so AG predictions sit
-next to the observed β / p / q values for direct comparison.
-
-Naming convention: AG_<assay>_raw_score is the predicted ALT-REF effect
-score for that assay (LFC for RNA; log2-sum DIFF for chromatin marks);
-AG_<assay>_quantile_score is AG's percentile rank against a precomputed
-genome-wide null distribution in [-1, +1]. Both columns emitted directly
-by alphagenome.models.variant_scorers.tidy_scores(). See main_text.md
-Methods for the full description.
-
-NA semantics:
-- RNA cols in Supp 4: NA if (a) variant not in AG RNA output, (b) MAGE-top
-  gene's ENSG isn't in AG's output for this variant (GENCODE v38 vs v46
-  mismatch), or (c) variant has no MAGE top gene (n_cis_genes_MAGE = 0).
-- RNA cols in Supp 5: NA if AG didn't return that (variant, gene) pair.
-- Chromatin cols: NA if variant absent from AG chromatin master.
-
-Usage:
-    python scripts/fig3_polymorphic_TE_eQTLs/merge_AG_scores_into_supp_tables.py
+Example usage (DEL -> Supp 7/8):
+python scripts/fig3_polymorphic_TE_eQTLs/merge_AG_scores_into_supp_tables.py --variant_class DEL
 """
 import argparse
 from pathlib import Path
@@ -100,21 +73,13 @@ NEW_SUMMARY_COLS = ['AG_RNA_concordance_with_MAGE', 'AG_chromatin_direction']
 LEGACY_AG_COLS = ['AG_raw_score', 'AG_quantile_score',
                   'AG_RNA_concordance_MAGE']  # earlier candidate name
 
-# Confidence threshold: |quantile_score| >= 0.99 marks "high-confidence"
-# predictions, following Avsec et al 2026's "approximately 99th percentile
-# of common variants" convention (AG SDK quantile_score is scaled to [-1, +1]
-# such that saturation toward ±1.0 represents extreme-tail predictions).
+# Confidence threshold: |quantile_score| >= 0.99 = "high-confidence" prediction
+# (Avsec 2026 convention; AG quantile_score in [-1,+1], ±1 = extreme tail).
 QTL_THRESHOLD = 0.99
 
-# === RNA aggregation: mean across STRAND-MATCHED STRANDED tracks ===========
-# Per Liu et al 2026 convention, we use the stranded total + stranded polyA
-# RNA-seq tracks only (two strand-specific tracks for the gene's strand),
-# dropping the unstranded polyA track (track_strand == '.') from both viz and
-# scoring. This:
-#   - matches the precedent paper's visualization
-#   - avoids the protocol-divergence problem where the unstranded track
-#     occasionally disagreed with the two stranded counterparts at small inserts
-#   - simplifies the aggregation to a clean "mean of two stranded tracks"
+# === RNA aggregation: mean across strand-matched stranded tracks ===========
+# Per Liu 2026, use the two strand-specific RNA-seq tracks for the gene's strand
+# (stranded total + stranded polyA), dropping the unstranded polyA track.
 rna = pd.read_csv(args.rna_master)
 rna['gene_id_uv'] = rna['gene_id'].str.replace(r'\.\d+$', '', regex=True)
 n_total = len(rna)

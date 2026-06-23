@@ -1,39 +1,14 @@
 #!/usr/bin/env Rscript
 #
-# scripts/generate_supp_tables/build_supp_tables_4_5_7_8_eqtl.R
+# Build the eQTL summary supplementary tables from the MAGE-260 + GEUVADIS-121
+# results: top-gene-per-variant (Supp 4 INS / 7 DEL) and all-variant-gene-pairs
+# (Supp 5 INS / 8 DEL). Each row carries MAGE + GEUVADIS beta/p/q and a
+# cross_cohort_concordance flag (same_direction / direction_flip / not-testable /
+# absent / gene_desert / effect_size_zero). Sorted by TE family then MAGE q.
 #
-# Builds two TSV tabs that together summarize the polymorphic-TE cis-eQTL
-# results across MAGE-260 and GEUVADIS-121:
-#
-#   Supp Table 4: supp_table_4_top_gene_per_variant.tsv  (1,322 rows)
-#     One row per polymorphic-TE variant in MAGE-260.
-#     For each, reports the variant's top cis gene (smallest MAGE p)
-#     and the matching GEUVADIS β/p/q for that same (variant, gene).
-#     Variants in gene deserts (no cis genes within +/- 500 kb) appear
-#     with NA top-gene fields.
-#
-#   Supp Table 5: supp_table_5_all_variant_gene_pairs.tsv  (~9,234 rows)
-#     One row per (variant, gene) cis pair tested in MAGE-260.
-#     For each, reports MAGE β/p/q AND GEUVADIS β/p/q.
-#     Standard long-format eQTL summary stats table.
-#
-# Both tabs are sorted by TE family (LTR5_Hs -> SVA -> L1 -> Alu -> misc)
-# and then by MAGE q ascending. Both include a "cross_cohort_concordance"
-# column with values:
-#   same_direction       — MAGE and GEU β have same sign
-#   direction_flip       — MAGE and GEU β have opposite signs
-#   variant_not_testable_in_GEU — variant fails GEU's >=5 hom + >=5 ref filter
-#   gene_or_pair_absent_in_GEU — variant testable in GEU but the (variant, gene) pair
-#                                is absent from GEU eQTL output (most likely cause: gene
-#                                not in GEU's GENCODE v12 annotation; could also be
-#                                expression-filter dropout)
-#   gene_desert_no_cis_in_MAGE — variant in MAGE set but has no cis gene
-#   effect_size_zero           — one cohort produced β = 0 exactly (rare)
-#
-# Usage:
-#   Rscript scripts/generate_supp_tables/build_supp_tables_4_5_7_8_eqtl.R
-#
-# Outputs are written to supptables/.
+# Example usage:
+# Rscript scripts/generate_supp_tables/build_supp_tables_4_5_7_8_eqtl.R                      # INS -> Supp 4/5
+# Rscript scripts/generate_supp_tables/build_supp_tables_4_5_7_8_eqtl.R --variant_class DEL  # DEL -> Supp 7/8
 
 suppressPackageStartupMessages({
   library(optparse); library(dplyr); library(readr)

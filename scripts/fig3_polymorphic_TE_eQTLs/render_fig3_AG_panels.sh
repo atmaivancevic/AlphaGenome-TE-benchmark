@@ -1,30 +1,13 @@
-#!/usr/bin/env bash
-#
-# scripts/fig3_polymorphic_TE_eQTLs/render_fig3_AG_panels.sh
-#
-# Reproducible batch renderer for Fig 3 candidate AlphaGenome panels.
-# Calls scripts/fig2_polymorphic_TE_example/plot_polymorphic_TE_insertion.py three times for 9 candidates,
-# one call per chromatin-track configuration:
-#
-#   1. rna_only/         — RNA-seq tracks only
-#   2. active_marks/     — RNA + H3K27ac (active enhancer mark) + ATAC + DNase
-#   3. full_chromatin/   — RNA + 5 histone marks (H3K27ac, H3K4me1, H3K4me3,
-#                          H3K27me3, H3K9me3) + ATAC + DNase
-#
-# Each configuration renders 3 plot types (baseline, diff, overlay) per variant,
-# so the full output is 9 variants × 3 layouts × 3 plots = 81 PDFs, organized
-# as figures/fig3_AG_predictions/{layout}/{variant}_{label}_{plot}.pdf.
-#
-# AG predictions are made fresh on each run (the script does not cache); each
-# layout call requires one AG predict_variant call per variant (~5-10s each).
-# Full batch ~10 min on a typical session.
-#
-# Usage:
-#   bash scripts/fig3_polymorphic_TE_eQTLs/render_fig3_AG_panels.sh
-#   bash scripts/fig3_polymorphic_TE_eQTLs/render_fig3_AG_panels.sh data/fig3_9_candidates.tab
-#
-# The default variant tab is data/fig3_9_candidates.tab; override as positional
-# arg if running on a different candidate set.
+#!/bin/bash
+
+## Batch-render Fig 3 candidate AlphaGenome panels: calls
+## plot_polymorphic_TE_insertion.py for 9 candidates in 3 track configurations
+## (rna_only, active_marks, full_chromatin) x 3 plot types (baseline/diff/overlay)
+## = 81 PDFs. Predictions are made fresh each run (~10 min); needs an API key.
+##
+## Example usage:
+## bash scripts/fig3_polymorphic_TE_eQTLs/render_fig3_AG_panels.sh
+## bash scripts/fig3_polymorphic_TE_eQTLs/render_fig3_AG_panels.sh data/fig3_9_candidates.tab
 
 set -euo pipefail
 

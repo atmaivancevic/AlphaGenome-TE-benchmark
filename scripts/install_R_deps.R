@@ -1,13 +1,9 @@
 #!/usr/bin/env Rscript
-# One-shot installer for the R packages required by the eQTL pipeline and the
-# R-based figure/supp-table scripts (everything under
-# scripts/fig3_polymorphic_TE_eQTLs/, scripts/fig4_5_LTR10_CRISPR_comparison/,
-# and scripts/generate_supp_tables/*.R).
+# Install the R packages used by the eQTL pipeline + R figure/supp-table scripts.
+# Idempotent: skips already-installed packages.
 #
-# Usage:
-#   Rscript scripts/install_R_deps.R
-#
-# Idempotent: skips packages already installed.
+# Example usage:
+# Rscript scripts/install_R_deps.R
 
 required <- c(
   # core eQTL pipeline

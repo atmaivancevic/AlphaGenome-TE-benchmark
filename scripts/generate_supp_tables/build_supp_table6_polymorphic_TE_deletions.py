@@ -1,36 +1,16 @@
 """
-Build Supp Table 6 (polymorphic TE deletion catalog) by joining the filtered
-solo TE DEL VCF (SVAN-annotated, no GTs) with the SVIM-asm hg38 genotyped BCF
-(per-sample GTs, no SVAN). Direct DEL-arm parallel to Supp Table 3 (INS).
+Build Supp Table 6 (polymorphic TE deletion catalog): DEL-arm parallel to Supp
+Table 3. Join the filtered solo TE DEL VCF with the genotyped BCF; per-variant
+stats from BCF INFO, carrier lists + NA12878 GT + flags from per-sample GTs.
+SVLEN is negative for DELs (anchor-excluded, VCF convention). NA12878=0/0 means
+NA12878 retains the TE (matches hg38); carriers are those who lost it. Multi-allelic
+sites skipped. Writes a TSV (xlsx optional via --xlsx).
 
-Both files are matched on variant ID (`SvimAsm########`). The genotyped BCF
-already provides AC, AN, AF, MAF, NS, F_MISSING, AC_Hom, AC_Het, AC_Hemi, HWE,
-ExcHet in INFO — no need to recompute. Per-sample iteration is used only to
-build the carrier sample-ID lists (carriers_hom, carriers_het) and the flagship
-sample's GT (NA12878 by default).
-
-Multi-allelic sites are skipped (same approach as INS catalog).
-
-DEL conventions (locked 2026-05-08, see memory/project_next_priority.md):
-- `del_len = len(ALT) - len(REF)` — anchor-EXCLUDED. NEGATIVE for DEL records
-  (e.g. -304 for a 304-bp deletion). Matches the VCF SVLEN convention. SVAN's
-  `DEL_LEN` field is anchor-INCLUDED (1 bp larger in absolute value); we use
-  the SVLEN convention not the SVAN field.
-- `alt` (1 bp anchor base) reported as a coordinate sanity-check column;
-  `ref` (the full deleted sequence) is not stored — it's just `pos..pos+|del_len|`.
-- NA12878 = 0/0 filter for the eQTL pipeline: opposite biological interpretation
-  vs INS. NA12878=0/0 for DEL means NA12878 RETAINS the TE = matches hg38
-  reference = AG REF unbiased. Carriers are those who LOST the TE.
-
-Output is written as a new tab in the SuppTables.xlsx workbook (existing tabs
-preserved). Optionally also dumps a TSV alongside.
-
-Usage:
-    python scripts/generate_supp_tables/build_supp_table6_polymorphic_TE_deletions.py \\
-        --filtered-vcf data/schloissnig_2025/vcf/solo_TE_DEL.svim_asm.hg38.SVAN.vcf.gz \\
-        --gt-bcf       data/schloissnig_2025/vcf/svim.asm.hg38.bcf \\
-        --xlsx         supptables/SuppTables.xlsx \\
-        --tsv          supptables/supp_table_6_polymorphic_TE_deletions.tsv
+Example usage:
+python scripts/generate_supp_tables/build_supp_table6_polymorphic_TE_deletions.py \
+    --filtered-vcf data/schloissnig_2025/vcf/solo_TE_DEL.svim_asm.hg38.SVAN.vcf.gz \
+    --gt-bcf       data/schloissnig_2025/vcf/svim.asm.hg38.bcf \
+    --tsv          supptables/supp_table_6_polymorphic_TE_deletions.tsv
 """
 import argparse, gzip, re, subprocess
 import pandas as pd

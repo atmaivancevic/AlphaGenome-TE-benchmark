@@ -1,53 +1,25 @@
 """
-Predict AlphaGenome track signals for both REF and ALT of each variant, and
-extract the mean + max signal over a user-specified locus per track. Used
-for the Fig 6 AP1-perturbation panels where we want to see the predicted
-H3K27ac / FOSL1 / RNA peak height shrink as AP1 motifs are scrambled —
-i.e. the absolute predicted signal per allele, not the variant log2FC.
+Predict AlphaGenome track signals for REF and ALT of each variant and extract
+mean + max signal over a locus per track (signal_mean/max_REF and _ALT). Unlike
+score_variant_*.py (which returns a single log2FC per variant), this gives the
+absolute predicted peak height per allele (eg used for the Fig 6 AP1-titration
+panels). Variants may be VCF-biallelic, CRISPR synthetic-DEL (ALT='.'), or same-length substitution variants.
 
-Distinct from score_variant_*.py:
-  - score_variant_*.py uses AG's score_variant() to get a single scalar
-    log2FC per (variant, scorer, biosample) tuple. Useful for the "how big
-    is the effect?" question.
-  - This script uses AG's predict_variant() to get the FULL track arrays
-    for both REF (baseline / WT-side) and ALT (perturbed side). Useful for
-    the "how does the predicted peak look on each allele?" question.
+Example usage (chromatin + TF tracks at the element locus):
+python scripts/fig6_AP1_perturbation/predict_variant_tracks.py \
+    --variants data/LTR10_ATG12_AP1_perturbations.tab \
+    --ontology EFO:0002824 --cell-line HCT116 \
+    --requested-outputs CHIP_HISTONE,CHIP_TF \
+    --keep-tracks H3K27ac FOSL1 JUND \
+    --out-csv results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element.csv
 
-For each variant row in --variants, the script runs predict_variant() once
-and then extracts, per requested track:
-    - signal_mean_REF, signal_max_REF       (track values averaged across
-    - signal_mean_ALT, signal_max_ALT        bins overlapping the locus,
-                                             for REF and ALT separately)
-The locus is taken from the per-variant POS / REF length (the variant's own
-genomic span), unless --locus is set to a fixed chrom:start-end window.
-
-Outputs:
-  --out-csv  one row per (variant, track) combo with mean/max signal for
-             both REF and ALT alleles + variant metadata.
-  Optionally --save-tracks-dir to dump per-variant full track arrays as
-  numpy .npz files (large; useful for genome-browser-style visualisation).
-
-Inputs:
-  --variants  tab file (ID/CHROM/POS/REF/ALT). Supports VCF-biallelic,
-              CRISPR-synthetic DEL (ALT='.'), and MNV (REF and ALT same
-              length, e.g. Fig 6 AP1 perturbations).
-  --ontology  cell-type ontology term, default EFO:0002824 (HCT116).
-  --requested-outputs
-              comma-separated list of AG OutputType names to request, e.g.
-              'CHIP_HISTONE,CHIP_TF,RNA_SEQ'. Default
-              'CHIP_HISTONE,CHIP_TF,RNA_SEQ'.
-  --keep-tracks
-              optional list of track name substrings to filter the output.
-              e.g. 'H3K27ac FOSL1' to keep only those two ChIP tracks.
-              Applied per output_type, case-insensitive.
-
-Usage:
-    python scripts/fig2_polymorphic_TE_example/predict_variant_tracks.py \\
-        --variants  data/LTR10_ATG12_AP1_perturbations.tab \\
-        --ontology  EFO:0002824 \\
-        --cell-line HCT116 \\
-        --keep-tracks H3K27ac FOSL1 total RNA-seq \\
-        --out-csv   results/AG_predict_variant_tracks_LTR10_ATG12_AP1.csv
+Example usage (RNA over a fixed gene-body locus):
+python scripts/fig6_AP1_perturbation/predict_variant_tracks.py \
+    --variants data/LTR10_ATG12_AP1_perturbations.tab \
+    --ontology EFO:0002824 --cell-line HCT116 \
+    --requested-outputs RNA_SEQ --keep-tracks "total RNA-seq" \
+    --locus chr5:115828199-115841837 \
+    --out-csv results/AG_perturbation_LTR10_ATG12_AP1/predict_RNA_at_ATG12_gene.csv
 """
 import argparse
 import os
@@ -133,7 +105,7 @@ for i, r in variant_df.iterrows():
     var_ref = str(r['REF']).upper()
     var_alt_raw = '' if str(r['ALT']) == '.' else str(r['ALT']).upper()
 
-    # AG Variant: handle MNV (same-length), INS, DEL, and CRISPR-synthetic-DEL (alt='').
+    # AG Variant: handle substitution variant (same-length), INS, DEL, and CRISPR-synthetic-DEL (alt='').
     variant = genome.Variant(
         chromosome=chrom, position=pos,
         reference_bases=var_ref, alternate_bases=var_alt_raw,
@@ -149,10 +121,8 @@ for i, r in variant_df.iterrows():
         requested_outputs=requested_outputs,
         organism=dna_client.Organism.HOMO_SAPIENS,
     )
-    # AG returns a VariantOutput with .reference and .alternate, each an
-    # Output container with attributes per requested output type
-    # (e.g. .chip_histone, .chip_tf, .rna_seq). Each is a TrackData-like
-    # object with .values (np.ndarray, shape (bins, tracks)) and .metadata.
+    # AG returns .reference and .alternate Outputs, each with per-output-type
+    # attributes (.chip_histone, .rna_seq, ...) carrying .values + .metadata.
     int_start = interval.start
     int_end   = interval.end
     locus_start, locus_end = (

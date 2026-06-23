@@ -1,20 +1,12 @@
 #!/usr/bin/env Rscript
 #
-# scripts/fig3_polymorphic_TE_eQTLs/compose_fig3.R
+# Compose the final multi-panel Fig 3 onto a single US Letter vector PDF for
+# Illustrator: three eQTL boxplots (A=Alu, B=L1, C=SVA) above the AG-vs-MAGE
+# scatter (D). Self-contained — re-derives each panel's ggplot (text stays text,
+# paths stay paths) rather than embedding pre-rendered PDFs.
 #
-# Compose Fig 3 panels A–D onto a single US Letter portrait, vector-PDF
-# page suitable for opening in Illustrator. Layout:
-#
-#   ┌──────────┬──────────┬──────────┐
-#   │  A  Alu  │  B  L1   │  C  SVA  │   ← 3 eQTL boxplots
-#   └──────────┴──────────┴──────────┘
-#   ┌──────────────────────────────────┐
-#   │           D  AG vs MAGE          │   ← scatter
-#   └──────────────────────────────────┘
-#
-# Self-contained: re-derives each panel's ggplot object (rather than
-# embedding the already-rendered PDFs) so the output is fully vector,
-# editable in Illustrator (text stays text, paths stay paths).
+# Example usage:
+# Rscript scripts/fig3_polymorphic_TE_eQTLs/compose_fig3.R
 
 suppressPackageStartupMessages({
   library(dplyr); library(readr); library(ggplot2); library(ggrepel)

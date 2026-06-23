@@ -1,8 +1,11 @@
-#!/usr/bin/env bash
-# For each AG H3K27ac bigWig (human), find the matching default bed narrowPeak
-# file from the SAME ENCODE analysis. Writes a TSV; downloads nothing.
-# Match rule: same ENCSR, shares an analysis (ENCAN) with the AG bigWig,
-# file_format=bed narrowPeak, preferred_default=true.
+#!/bin/bash
+
+## Resolve each AG H3K27ac bigWig to its matching ENCODE narrowPeak
+## (same ENCSR + analysis, preferred_default). Writes a TSV; downloads nothing.
+##
+## Example usage:
+## bash scripts/fig1_baseline_chromatin/resolve_encode_h3k27ac_peaks.sh \
+##   data/AG_training_H3K27ac_tracks.csv
 set -euo pipefail
 
 MANIFEST="${1:-data/AG_training_H3K27ac_tracks_passwarning.csv}"

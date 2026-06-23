@@ -1,54 +1,18 @@
 """
-Generate AP1-motif perturbation alleles for LTR10.ATG12 (Fig 6 input).
+Generate AP1-motif perturbation alleles for LTR10.ATG12 (Fig 6 input). WT is
+2,358 bp with 20 AP1 motifs (FIMO + JASPAR FOSL1, Ivancevic 2024 Table S25).
+Two perturbation classes, 8 alleles, all length-preserving (REF + ALT both
+2,358 bp = substitution variants):
+  - Titration (4): scramble N of 20 motifs (N=5/10/15/20) with per-site
+    composition-matched random permutations; lower-N subsets of higher-N (seeded).
+  - TF substitution (4): replace all 20 motifs with the 7-bp consensus of
+    TP53/CTCF/GATA1/HNF1A — tests whether AG's output is AP1-specific.
 
-WT LTR10.ATG12: 2,358 bp at chr5:115,928,579-115,930,936.
-Contains 20 AP1 motifs (FIMO + JASPAR FOSL1, per Ivancevic 2024 Table S25):
-  - 12 in VNTR_1 (chr5:115,928,828-115,929,147)
-  - 8  in VNTR_2 (chr5:115,930,258-115,930,520)
-Reproducible with regex TGA[CGA]TCA = TGA[CG]TCA canonical (17) + TGAATCA
-relaxed (3) = 20 hits, matching Ivancevic's count exactly.
-
-Two perturbation classes (8 alleles total):
-
-  TITRATION (4 alleles): scramble N of 20 motifs (N = 5, 10, 15, 20). Each
-  scrambled motif is replaced with a *per-site composition-matched random
-  permutation of its own 7 nucleotides* — guaranteed not to match the AP1
-  regex (forward or reverse-complement strand). Per-site permutations are
-  drawn with a fixed RNG seed for reproducibility. Lower-N alleles are
-  strict subsets of higher-N alleles so the titration is monotonic
-  (scram05's 5 sites ⊂ scram10's 10 ⊂ scram15's 15 ⊂ scram20).
-
-  TF SUBSTITUTION (4 alleles): replace all 20 AP1 motifs with the canonical
-  7-bp consensus core of TP53, CTCF, GATA1, or HNF1A. Same substitution
-  applied to every motif site; flanking sequence left intact. Used to test
-  whether AG's predicted regulatory output is AP1-specific or whether any
-  other strong TF binder gives equivalent activity.
-
-Why per-site composition-matched scrambles (not Ivancevic's single-string
-scramble): Ivancevic 2024 used a 10-bp scramble AGCCCCGTTA to replace the
-10-bp CTGAGTCACC window in their LTR10A consensus — that 10-bp window has
-matched composition (4C:2T:2G:2A on both sides). For our 7-bp motif-only
-substitution, a single fixed 7-mer can't match composition across both
-canonical TGAGTCA (2T:2G:2A:1C) and relaxed TGAATCA (2T:1G:3A:1C) sites.
-Permuting each motif's own nucleotides eliminates the composition confound
-completely.
-
-Outputs:
-  --out         data/LTR10_ATG12_AP1_perturbations.tab
-                MNV-format variant tab: 8 alleles, REF + ALT both 2,358 bp.
-                One row per perturbation. Compatible with score_variant_lfc.py
-                and score_variant_chromatin.py with --allow-mnv.
-  --motif-log   data/LTR10_ATG12_AP1_perturbations.md
-                Human-readable companion documenting:
-                  * the 20 AP1 motif positions + sequences
-                  * the titration random-pick order (seed-derived)
-                  * each allele's exact motif-by-motif substitution map
-
-Usage:
-    python scripts/fig6_AP1_perturbation/generate_LTR10_ATG12_AP1_perturbations.py \\
-        --variants  data/LTR10_variants.tab \\
-        --out       data/LTR10_ATG12_AP1_perturbations.tab \\
-        --motif-log data/LTR10_ATG12_AP1_perturbations.md
+Example usage:
+python scripts/fig6_AP1_perturbation/generate_LTR10_ATG12_AP1_perturbations.py \
+    --variants  data/LTR10_variants.tab \
+    --out       data/LTR10_ATG12_AP1_perturbations.tab \
+    --motif-log data/LTR10_ATG12_AP1_perturbations.md
 """
 import argparse
 import random

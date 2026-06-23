@@ -1,35 +1,15 @@
 """
-Scatter plot of experimental ChIP-seq peak scores vs AlphaGenome-predicted
-peak scores across the 113 LTR10A/F elements with experimental data
-(H3K27ac or FOSL1). Used as Fig 5 Panel B (chromatin correlation half of
-the chromatin->RNA story).
+Scatter of experimental ChIP-seq vs AG-predicted peak scores across the 113
+LTR10A/F elements with experimental data (H3K27ac or FOSL1) — Fig 5 Panel B.
+Both axes are non-negative peak intensities (correlation reported signed only).
+Orange = the 113 candidates, red = the 8 CRISPR-validated fragments (labelled).
+Pearson r + Spearman rho annotated. Input: Supp Table 11.
 
-X = experimental peak score, Y = AG-predicted peak score, one dot per
-LTR10A/F element that has experimental data. Both axes are non-negative
-peak intensities, so the correlation is reported signed only (unsigned
-would be identical given x, y >= 0).
-
-Colour layers:
-  - orange = "candidate" elements with experimental peak data (n=113)
-  - red    = the 8 CRISPR-validated fragments (Ivancevic 2024)
-CRISPR-validated dots are labelled with their target gene names. Two of
-the 6 CRISPR-tested enhancers (LTR10.ATG12, LTR10.XRCC4) appear as 2
-fragments each in the merged 650-set; documented in Fig 5 legend.
-
-Stats annotation:
-  Pearson r + p  on (experimental, AG-predicted)
-  Spearman ρ + p on the same pair
-Computed via scipy.stats; mathematically identical to R's cor.test().
-Same convention as Fig 3 G/H and Fig 5 B-G.
-
-Source data:
-  supptables/supp_table_11_LTR10AF_experimental_vs_AG.tsv
-
-Usage:
-    python scripts/fig4_5_LTR10_CRISPR_comparison/plot_LTR10AF_experimental_vs_AG_scatter.py \\
-        --input supptables/supp_table_11_LTR10AF_experimental_vs_AG.tsv \\
-        --mark H3K27ac \\
-        --output figures/FIG5_FINAL/panelB_LTR10AF_H3K27ac_scatter.pdf
+Example usage:
+python scripts/fig4_5_LTR10_CRISPR_comparison/plot_LTR10AF_experimental_vs_AG_scatter.py \
+    --input supptables/supp_table_11_LTR10AF_experimental_vs_AG.tsv \
+    --mark H3K27ac \
+    --output figures/FIG5_FINAL/panelB_LTR10AF_H3K27ac_scatter.pdf
 """
 import argparse
 from pathlib import Path
@@ -66,8 +46,7 @@ crispr     = matched[matched['is_crispr']]
 n_total  = len(matched)
 n_crispr = int(matched['is_crispr'].sum())
 
-# Stats (signed). x, y are non-negative peak intensities so unsigned is
-# identical and would be redundant.
+# Stats signed only (x, y are non-negative peak intensities, so unsigned is identical).
 x = matched[expt_col].values.astype(float)
 y = matched[pred_col].values.astype(float)
 r,  p_r   = stats.pearsonr(x, y)

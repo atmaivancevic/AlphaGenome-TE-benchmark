@@ -1,37 +1,22 @@
 """
-Filter the SVIM-asm hg38 SVAN-annotated BCF to specified SVAN classes on
-canonical chromosomes (chr1..chr22, chrX, chrY). A record is kept if its
-ITYPE_N (insertion class) or DTYPE_N (deletion class) matches one of the
-requested values.
+Filter the SVIM-asm hg38 SVAN-annotated BCF to chosen SVAN classes on canonical
+chromosomes (chr1-22, X, Y). A record is kept if its ITYPE_N (insertion class) or
+DTYPE_N (deletion class) matches a requested value. Default keeps only
+ITYPE_N=solo (canonical solo MEIs). Output is a gzipped VCF.
 
-Values seen in the SVIM-asm hg38 SVAN BCF (release v1.1):
-  ITYPE_N: solo, VNTR, DUP, DUP_INTERSPERSED, partnered, orphan, INV_DUP,
-           PSD, NUMT, chimera, COMPLEX_DUP
-  DTYPE_N: VNTR, solo, orphan, PSD, partnered, chimera
+Example usage (solo MEI insertions only):
+python scripts/fig2_polymorphic_TE_example/filter_solo_TE_INS_vcf.py \
+    --svan-bcf data/schloissnig_2025/vcf/svim.asm.hg38.noGt.SVAN_1.3.bcf \
+    --gt-bcf   data/schloissnig_2025/vcf/svim.asm.hg38.bcf \
+    --output   data/schloissnig_2025/vcf/solo_TE_INS.svim_asm.hg38.SVAN.vcf.gz
 
-Default keeps only `ITYPE_N=solo` (canonical solo MEI insertions — cleanest
-substrate for sequence-to-function benchmarks). Pass --dtype to also pull
-deletion classes; pass an empty --itype to exclude insertions entirely.
-
-Output is a gzipped VCF. The SVAN BCF ships with stale T2T contig metadata
-in its header (variant positions are hg38). The output strips those and
-substitutes the hg38 contig lines from the genotyped BCF, so downstream
-tools see consistent GRCh38 metadata.
-
-Usage:
-    # Pass 1: solo MEI insertions only
-    python scripts/fig2_polymorphic_TE_example/filter_solo_TE_INS_vcf.py \\
-        --svan-bcf data/schloissnig_2025/vcf/svim.asm.hg38.noGt.SVAN_1.3.bcf \\
-        --gt-bcf   data/schloissnig_2025/vcf/svim.asm.hg38.bcf \\
-        --output   data/schloissnig_2025/vcf/solo_TE_INS.svim_asm.hg38.SVAN.vcf.gz
-
-    # Everything except solo MEI insertions (other INS classes + all DEL classes)
-    python scripts/fig2_polymorphic_TE_example/filter_solo_TE_INS_vcf.py \\
-        --svan-bcf data/schloissnig_2025/vcf/svim.asm.hg38.noGt.SVAN_1.3.bcf \\
-        --gt-bcf   data/schloissnig_2025/vcf/svim.asm.hg38.bcf \\
-        --itype    VNTR,DUP,DUP_INTERSPERSED,partnered,orphan,INV_DUP,PSD,NUMT,chimera,COMPLEX_DUP \\
-        --dtype    VNTR,solo,orphan,PSD,partnered,chimera \\
-        --output   data/schloissnig_2025/vcf/nonsolo_INS_DEL.svim_asm.hg38.SVAN.vcf.gz
+Example usage (everything except solo insertions):
+python scripts/fig2_polymorphic_TE_example/filter_solo_TE_INS_vcf.py \
+    --svan-bcf data/schloissnig_2025/vcf/svim.asm.hg38.noGt.SVAN_1.3.bcf \
+    --gt-bcf   data/schloissnig_2025/vcf/svim.asm.hg38.bcf \
+    --itype    VNTR,DUP,DUP_INTERSPERSED,partnered,orphan,INV_DUP,PSD,NUMT,chimera,COMPLEX_DUP \
+    --dtype    VNTR,solo,orphan,PSD,partnered,chimera \
+    --output   data/schloissnig_2025/vcf/nonsolo_INS_DEL.svim_asm.hg38.SVAN.vcf.gz
 """
 import argparse, gzip, hashlib, re, subprocess
 from collections import Counter

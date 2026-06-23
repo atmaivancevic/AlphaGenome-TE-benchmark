@@ -1,20 +1,15 @@
 """
-Predict AlphaGenome H3K27ac signal at experimental peak regions.
+Predict AlphaGenome H3K27ac signal at experimental peak regions. For each peak,
+centers a 1Mb window on the peak midpoint, caches the prediction, and reuses it
+for any later peak whose midpoint falls in the window (much faster than one API
+call per peak). Input must be sorted by chrom, start.
 
-For each peak, centers a 1Mb window on the peak midpoint.
-Caches the prediction and reuses it for any subsequent peak whose midpoint
-falls within the window. Much faster than one API call per peak.
-
-Input must be sorted by chromosome AND by start position within each
-chromosome (standard narrowPeak/BED files from `bedtools sort` are).
-The 1Mb-window cache eviction logic assumes positional locality.
-
-Usage:
-    python scripts/fig1_baseline_chromatin/predict_peak_signal_batched.py \
-        --regions data/encode_h3k27ac/peaks/merged/EFO_0002824_HCT116.narrowPeak.gz \
-        --ontology EFO:0002824 \
-        --label EFO_0002824_HCT116 \
-        --outdir results/AG_predicted_h3k27ac_batched
+Example usage:
+python scripts/fig1_baseline_chromatin/predict_peak_signal_batched.py \
+    --regions data/encode_h3k27ac/peaks/merged/EFO_0002824_HCT116.narrowPeak.gz \
+    --ontology EFO:0002824 \
+    --label EFO_0002824_HCT116 \
+    --outdir results/AG_predicted_h3k27ac_batched
 """
 
 import os, time, argparse, gzip
@@ -65,9 +60,7 @@ with opener(args.regions, 'rt') as f:
 if args.test:
     regions = regions[:20]
 
-# Verify input is sorted by chromosome AND by start position within
-# chromosome. The 1Mb-window cache eviction logic assumes positional
-# locality; unsorted input would silently collapse cache hit rate.
+# Verify input is sorted by chrom, start. Unsorted input would silently collapse the cache hit rate.
 last_chrom = None
 last_start = -1
 for chrom, start, _, _ in regions:

@@ -1,22 +1,12 @@
 #!/usr/bin/env Rscript
 #
-# scripts/fig4_5_LTR10_CRISPR_comparison/plot_LTR10_dumbbell.R
+# Paired-lollipop ("dumbbell") comparing CRISPRi-observed RNA log2FC vs AG-predicted
+# RNA raw_score per measured gene at one LTR10 CRISPRi enhancer. Two side-by-side
+# panels share a y-axis (genes ordered by CRISPR log2FC); separate x-scales since
+# the two magnitudes aren't directly comparable. Input: Supp Table 10.
 #
-# Paired lollipop ("dumbbell") comparing CRISPRi-observed RNA log2FC vs
-# AG-predicted RNA raw_score for each measured gene at a given LTR10
-# CRISPRi-validated enhancer.
-#
-# Two side-by-side panels, shared y-axis (gene names ordered by CRISPR
-# log2FC, most-negative at top). Different x-scales — CRISPR log2FC and
-# AG raw_score are NOT directly comparable as magnitudes, so they sit in
-# separate panels. Axis limits default to shared values across the six
-# LTR10 enhancers so panels are cross-comparable.
-#
-# Input: supp_table_10_LTR10_CRISPR_AG_predictions.tsv.
-# Output: figures/FIG5_FINAL/dumbbells/<variant>_dumbbell.pdf (default).
-#
-# Usage:
-#   Rscript scripts/fig4_5_LTR10_CRISPR_comparison/plot_LTR10_dumbbell.R --variant LTR10.ATG12
+# Example usage:
+# Rscript scripts/fig4_5_LTR10_CRISPR_comparison/plot_LTR10_dumbbell.R --variant LTR10.ATG12
 
 suppressPackageStartupMessages({
   library(optparse); library(dplyr); library(readr); library(ggplot2)
@@ -30,10 +20,8 @@ opt <- parse_args(OptionParser(option_list = list(
               help = "Output PDF path; auto-derived from --variant if NULL"),
   make_option("--always_include", default = "",
               help = "Comma-separated gene names to force-include even if neither CRISPR nor AG passes the significance threshold (e.g. namesake target genes like MCPH1 for LTR10.MCPH1)."),
-  # CRISPR axis shared across the 6 enhancers so the experiment side is
-  # directly comparable. AG axis defaults to "auto" — per-enhancer
-  # symmetric range around 0 — because the XRCC4 outlier (raw_score
-  # -1.596) otherwise crushes the other five enhancers' visuals.
+  # CRISPR x-axis shared across the 6 enhancers; AG x-axis "auto" (per-enhancer
+  # symmetric range) so the XRCC4 outlier doesn't crush the others.
   make_option("--crispr_xlim", default = "-3.5,0.5"),
   make_option("--ag_xlim", default = "auto",
               help = "AG x-limits as 'lo,hi' or 'auto' for per-enhancer symmetric"),
@@ -58,11 +46,8 @@ s10 <- read_tsv(opt$supp10, show_col_types = FALSE, col_types = cols(.default = 
 s10 <- s10 %>% mutate(variant_id_ff = na_if(variant_id, "")) %>%
   fill(variant_id_ff, .direction = "down")
 
-# Rule A inclusion: gene was CRISPR-tested (non-NA log2FC) AND is
-# significant in at least one of CRISPR (padj < 0.05) or AG
-# (|quantile_score| > 0.9). Each panel then colours by its own
-# direction/sig — a gene can be coloured on one side and grey on the
-# other when sources disagree on whether it's significant.
+# Rule A: gene is CRISPR-tested and significant in CRISPR (padj<0.05) or AG
+# (|quantile|>0.9). Each panel colours by its own direction/significance.
 ALPHA   <- 0.05
 AG_QTHR <- 0.9
 df <- s10 %>%
@@ -88,9 +73,8 @@ df <- s10 %>%
       ag_sig & AG_RNA_raw_score > 0       ~ "up",
       TRUE                                ~ "ns"))
 
-# Order genes by CRISPR log2FC (most negative at top — strongest down hits first).
-# Optionally right-pad gene names with leading spaces so axis-text widths
-# (and therefore panel widths) match across multiple dumbbells.
+# Order genes by CRISPR log2FC (most negative at top); optional right-pad so panel
+# widths match across dumbbells.
 df <- df %>% arrange(crispr_log2FoldChange)
 if (opt$pad_gene_names > 0) {
   df$gene_name <- formatC(as.character(df$gene_name),

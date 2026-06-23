@@ -1,48 +1,22 @@
 #!/usr/bin/env Rscript
 #
-# scripts/fig3_polymorphic_TE_eQTLs/eqtl_matrixeqtl_pipeline.R
+# Polymorphic-TE cis-eQTL pipeline for Fig 3. Runs MatrixEQTL on MAGE-260 or
+# GEUVADIS-121, INS or DEL variants. Steps: load cohort expression (MAGE VST /
+# GEUVADIS log2(RPKM+1)); restrict to Taylor 2024's expression-filtered genes;
+# residualize per gene against covariates, then inverse-normal-transform; build
+# the TE genotype dosage matrix from carrier lists (filter: NA12878=0/0, MAF>0.01,
+# >=5 hom-alt, >=5 hom-ref); MatrixEQTL additive model INT(residuals) ~ dose,
+# cis +/-500 kb; BH-FDR; annotate + save TSV.
+# Method follows Bravo et al. 2024 (covariate-residualize -> INT); MatrixEQTL
+# from Shabalin 2012; INT formula from Beasley et al. 2009.
 #
-# Polymorphic-TE cis-eQTL pipeline for Fig 3 (Ivancevic et al.).
-# Runs MatrixEQTL on either MAGE-260 or GEUVADIS-121 with a unified covariate
-# framework and outputs the full per-(variant, gene) table for downstream
-# plotting + cross-cohort comparison.
+# Example usage:
+# Rscript scripts/fig3_polymorphic_TE_eQTLs/eqtl_matrixeqtl_pipeline.R --cohort MAGE
+# Rscript scripts/fig3_polymorphic_TE_eQTLs/eqtl_matrixeqtl_pipeline.R --cohort GEUVADIS
+# Rscript scripts/fig3_polymorphic_TE_eQTLs/eqtl_matrixeqtl_pipeline.R --cohort MAGE --variant_class DEL
+# Rscript scripts/fig3_polymorphic_TE_eQTLs/eqtl_matrixeqtl_pipeline.R --cohort GEUVADIS --variant_class DEL
 #
-# Pipeline (matches Bravo et al. 2024 LCL polymorphic-TE eQTL methodology):
-#   1. Load cohort-specific expression matrix (MAGE: precomputed VST;
-#      GEUVADIS: precomputed RPKM, log2(RPKM+1), aggregate sample-runs to
-#      per-donor mean).
-#   2. Restrict to Taylor et al. 2024's expression-quality-filtered gene set
-#      (unversioned ENSG match across GENCODE versions where needed).
-#   3. Residualize per gene against cohort-specific covariates:
-#        MAGE:     INT(VST) ~ continentalGroup + sex + batch
-#        GEUVADIS: INT(log2(RPKM+1)) ~ continentalGroup + sex
-#      Inverse-normal-transform the residuals per gene
-#      (Beasley, Erickson & Allison 2009 formula).
-#   4. Build polymorphic-TE genotype dosage matrix from Schloissnig 2025
-#      carrier lists (Supp Table 3). Filter: NA12878 = 0/0 + MAF > 0.01 +
-#      >= 5 hom-alt + >= 5 hom-ref carriers in the cohort.
-#   5. Run MatrixEQTL: additive linear model on INT(residuals) ~ dose,
-#      cisDist = +/- 500 kb (matches AlphaGenome's 1 Mb receptive field),
-#      pvOutputThreshold = 1.0 (save all (variant, gene) pairs for the
-#      genome-wide AG-vs-observed scatter; multiple-testing in R post-hoc).
-#   6. BH-FDR across all (variant, gene) pairs.
-#   7. Annotate with gene/variant metadata and save TSV.
-#
-# Citations chain:
-#   Bravo et al. 2024 (PLOS Genetics; LCL polymorphic-TE eQTL methodology;
-#   covariate residualization-then-INT order)
-#   Castanera et al. 2023 (eLife; subpopulation as covariate, no PEER)
-#   Koks et al. 2021 (IJMS; sparse-covariate TE-eQTL precedent)
-#   Jia et al. 2025 (review; "standard eQTL identification = linear regression")
-#   Shabalin 2012 (Bioinformatics; MatrixEQTL)
-#   Beasley, Erickson & Allison 2009 (Behavior Genetics; INT formula)
-#   Taylor et al. 2024 (Nature; MAGE expression matrix and gene-filter list)
-#
-# Usage:
-#   Rscript scripts/fig3_polymorphic_TE_eQTLs/eqtl_matrixeqtl_pipeline.R --cohort MAGE
-#   Rscript scripts/fig3_polymorphic_TE_eQTLs/eqtl_matrixeqtl_pipeline.R --cohort GEUVADIS
-#
-# Outputs go to results/eqtl_matrixeqtl_{MAGE260,GEUVADIS121}/ by default.
+# Outputs -> results/eqtl_matrixeqtl_{MAGE260,GEUVADIS121}[_DEL]/.
 
 suppressPackageStartupMessages({
   library(optparse); library(data.table); library(R.utils)
@@ -77,11 +51,9 @@ stopifnot(opt$cohort %in% c("MAGE","GEUVADIS"))
 opt$variant_class <- toupper(opt$variant_class)
 stopifnot(opt$variant_class %in% c("INS", "DEL"))
 
-# Variant-class plumbing: INS uses Supp Table 3; DEL uses Supp Table 6.
-# Both catalogs use a single `SVLEN` column (positive for INS, negative for
-# DEL — sourced verbatim from the genotyped BCF's SVLEN INFO field). NA12878
-# = 0/0 filter is the same syntax in both cases (REF-unbiased AG prediction),
-# with opposite biology — INS carriers gained the TE; DEL carriers lost it.
+# Variant-class handling: INS uses Supp Table 3, DEL uses Supp Table 6. The
+# NA12878=0/0 filter is identical for both (REF-unbiased AG prediction); the
+# biology is opposite (INS carriers gained the TE, DEL carriers lost it).
 catalog_path   <- if (opt$variant_class == "INS") opt$supp_table_3 else opt$supp_table_6
 out_dir_suffix <- if (opt$variant_class == "INS") ""               else "_DEL"
 
@@ -106,11 +78,8 @@ if (opt$cohort == "MAGE") {
   cohort <- read_tsv(opt$mage_overlap, show_col_types = FALSE)
   donors_target <- setdiff(cohort$sample, SAMPLE_SWAP_SKIP)
 
-  # .keep_all = TRUE retains the per-library continuous covariates
-  # (RIN, numReads, RNA Qubit fields) that the PC diagnostic needs. Picks the
-  # first library per donor — donor-level fields (sex, super-pop, etc.) are
-  # invariant across libraries; continuous fields are library-level and
-  # represent that one library's value.
+  # .keep_all = TRUE keeps the per-library continuous covariates (RIN, numReads,
+  # RNA Qubit) the PC diagnostic needs; takes the first library per donor.
   mage_md <- read.table(opt$mage_metadata, header = TRUE, sep = "\t",
                        stringsAsFactors = FALSE) %>%
     distinct(sample_coriellID, .keep_all = TRUE)
@@ -203,9 +172,8 @@ if ("batch" %in% colnames(donor_meta))
 
 # ============================================================================
 # PRE-FLIGHT EXPRESSION-PC x COVARIATE DIAGNOSTIC (MAGE only; -> Supp Table 9)
-# Top 10 PCs of the expression-filtered VST matrix; for each PC, the variance
-# explained (R^2 from a univariate linear model) by every candidate covariate.
-# Justifies the sparse covariate set against alternatives (genotype PCs, PEER).
+# Variance in each of the top 10 expression PCs explained by every candidate
+# covariate (R^2), justifying the sparse covariate set.
 # ============================================================================
 if (opt$cohort == "MAGE") {
   cat(sprintf("\n[MAGE] Computing PC x covariate diagnostic...\n"))

@@ -1,27 +1,14 @@
 """
-Find Fig 1 Panel B/C outlier candidates from the 8 AG-vs-ENCODE H3K27ac
-scatter pairs.
+Find outliers in the AG-vs-ENCODE H3K27ac scatters.
+Per biosample, peaks are matched by coordinate and ranked by signed residual from
+a linear fit: residual = pred - (slope*exp + intercept). Large positive = AG
+over-predicts; large negative = AG under-predicts. Outputs
+the top-N candidates per direction per biosample as one TSV.
 
-For each biosample, peaks are matched by coordinate (same join used in
-`plot_peak_correlation.py`), a linear regression is fit to (exp, pred)
-on linear (raw signal) axes — matching the Panel A scatter — and peaks
-are ranked by signed residual:
-
-    residual = pred − (slope * exp + intercept)
-
-  * Big positive residual → AG over-predicts (Panel B candidate).
-  * Big negative residual → AG under-predicts (Panel C candidate).
-
-Linear residuals naturally weight by signal magnitude, so the dots that
-look most extreme on the scatter are the ones flagged. No floor filter
-needed: low-signal noise has small residuals by construction.
-
-Output: one TSV pooling the top-N candidates per direction per biosample.
-
-Usage:
-    python scripts/fig1_baseline_chromatin/find_panel_outliers.py \
-        --topn 20 \
-        --output tasks/fig1_panel_BC_outlier_candidates.tsv
+Example usage:
+python scripts/fig1_baseline_chromatin/find_panel_outliers.py \
+    --topn 20 \
+    --output tasks/fig1_panel_BC_outlier_candidates.tsv
 """
 
 import os, argparse, gzip

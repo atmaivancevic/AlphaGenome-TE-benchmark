@@ -1,20 +1,12 @@
 """
-Build Supp Table 1 — ENCODE H3K27ac peak files matched to AlphaGenome training tracks.
+Build Supp Table 1 — ENCODE H3K27ac peak files matched to AlphaGenome training
+tracks. Joins Avsec 2026 Suppl Table 2 (track metadata) with our resolved ENCODE
+narrowPeak manifest. One row per AG training biosample (159 human H3K27ac tracks);
+multi-experiment biosamples list ENCSR/bigWig/peak/pipeline/md5 as comma-separated
+parallel arrays. Output: supptables/supp_table_1_encode_h3k27ac_tracks.tsv.
 
-Joins the Avsec et al. 2026 Suppl Table 2 (full track metadata, sheet 2 of
-the MOESM3 xlsx) with our resolved ENCODE narrowPeak manifest (one row per
-AG-training bigWig with peak_ENCFF / pipeline_version / md5sum).
-
-Output:
-    supptables/supp_table_1_encode_h3k27ac_tracks.tsv
-
-One row per AG training biosample (159 human H3K27ac × encode tracks).
-Multi-experiment biosamples list their ENCSR / bigWig ENCFF / peak ENCFF /
-pipeline_version / md5sum fields as comma-separated parallel arrays
-(aligned to ordering of Experiment accession).
-
-Usage:
-    python scripts/generate_supp_tables/build_supp_table1_encode_h3k27ac_tracks.py
+Example usage:
+python scripts/generate_supp_tables/build_supp_table1_encode_h3k27ac_tracks.py
 """
 
 import csv

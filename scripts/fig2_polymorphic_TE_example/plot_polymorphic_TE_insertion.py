@@ -1,20 +1,18 @@
 """
-Predict + plot the per-track effect of a polymorphic TE insertion using
-AlphaGenome. The companion of helper_functions.plot_difference (deletions),
-adapted for insertion variants from Schloissnig 2025 Supp Table 2.
+Predict and plot the per-track effect of a polymorphic TE insertion with
+AlphaGenome (RNA-seq + ChIP tracks), saving baseline / diff / overlay PDFs per
+variant. The insertion is built as reference_bases = anchor base (REF),
+alternate_bases = anchor + inserted sequence (ALT). --frame alt (default) extends
+the x-axis so the inserted sequence's own signal is visible; --frame ref splices
+it out and aligns on reference coordinates.
 
-Default usage scores all variants in --variants against the GM12878 ontology
-(EFO:0002784) for ChIP-histone, ChIP-TF, and RNA-seq tracks, and saves one
-PDF per variant to figures/.
-
-Insertion variant construction:
-    reference_bases = single-base anchor at POS (REF column from VCF)
-    alternate_bases = anchor + inserted sequence (ALT column from VCF)
-
-Usage:
-    python scripts/fig2_polymorphic_TE_example/plot_polymorphic_TE_insertion.py \\
-        --variants data/polymorphicTE_variants.tab \\
-        --ontology EFO:0002784 --label GM12878
+Example usage:
+python scripts/fig2_polymorphic_TE_example/plot_polymorphic_TE_insertion.py \
+    --variants data/fig3_tier1_variants.tab \
+    --ontology EFO:0002784 --label GM12878 \
+    --assays RNA_SEQ CHIP_HISTONE \
+    --out-dir figures/fig3_AG_predictions \
+    --plots baseline overlay
 """
 import argparse, os, sys
 import matplotlib.pyplot as plt
@@ -79,9 +77,8 @@ if not os.path.isfile(gtf_path):
     print(f'  cached at {gtf_path}')
 
 gtf = pd.read_feather(gtf_path)
-# protein-coding + longest-transcript-per-gene only. Dropping TSL filter so that
-# retrogenes / newer protein-coding loci (e.g. RPSA2 — all 13 transcripts at TSL>1
-# or NA, would otherwise be filtered out) still show up in the transcript panel.
+# Protein-coding, longest transcript per gene. TSL filter dropped so retrogenes /
+# newer loci (e.g. RPSA2) still appear in the transcript panel.
 gtf_longest = gene_annotation.filter_to_longest_transcript(
     gene_annotation.filter_protein_coding(gtf)
 )
@@ -113,31 +110,23 @@ for _, row in variant_df.iterrows():
     vid = row['ID']
     chrom, pos = row['CHROM'], int(row['POS'])
     var_ref, var_alt = row['REF'], row['ALT']
-    # Reject anything that isn't a literal ACGT(N) sequence: NaN, empty, missing,
-    # VCF symbolic alleles like <INS> / <DEL>, multi-allelic <ALT1,ALT2>, etc.
-    # AG's score/predict APIs require a real sequence, not a symbolic placeholder.
+    # Reject non-ACGT(N) alleles (NaN, empty, VCF symbolic <INS>/<DEL>, multi-allelic):
+    # AG's score/predict APIs need a real sequence, not a placeholder.
     if not isinstance(var_alt, str) or not isinstance(var_ref, str):
         print(f'  skip {vid}: ALT/REF is not a string'); continue
     if var_alt in ('.', '', '*') or var_alt.startswith('<') or ',' in var_alt:
         print(f'  skip {vid}: ALT is symbolic / missing / multi-allelic ({var_alt!r})'); continue
     if not set(var_alt.upper()) <= _ACGT or not set(var_ref.upper()) <= _ACGT:
         print(f'  skip {vid}: ALT or REF contains non-ACGT bases'); continue
-    # Normalise to uppercase once after validation. AG accepts either case,
-    # but uppercase is the canonical genomic-sequence convention and keeps
-    # downstream length / variant-construction calls consistent.
+    # Normalise to uppercase (canonical genomic-sequence convention).
     var_ref = var_ref.upper()
     var_alt = var_alt.upper()
     insert_len = len(var_alt) - len(var_ref)
     if insert_len <= 0:
         print(f'  skip {vid}: ALT not longer than REF (not an insertion)'); continue
-    # Per-variant visualization flanks. Two layers of overrides on the CLI
-    # --flank-bp default:
-    #   1. `FLANK_BP` column sets a symmetric flank for that row.
-    #   2. `LEFT_FLANK_BP` / `RIGHT_FLANK_BP` columns enable asymmetric flanking
-    #      when present (e.g. to crop the view so the variant + downstream
-    #      target gene get more visual real estate without showing irrelevant
-    #      upstream context). If only one of the two is present, the other
-    #      falls back to FLANK_BP (or args.flank_bp).
+    # Per-variant visualization flanks (override CLI --flank-bp): a FLANK_BP column
+    # sets a symmetric flank; LEFT_FLANK_BP / RIGHT_FLANK_BP allow asymmetric flanks
+    # (each falls back to FLANK_BP, then args.flank_bp).
     flank_bp = args.flank_bp
     if 'FLANK_BP' in row.index and pd.notna(row['FLANK_BP']) and str(row['FLANK_BP']).strip():
         flank_bp = int(row['FLANK_BP'])
@@ -157,12 +146,9 @@ for _, row in variant_df.iterrows():
         reference_bases=var_ref, alternate_bases=var_alt,
         name=f'{vid}_Insertion',
     )
-    # PREDICTION interval: ALWAYS symmetric around the insertion site, so when
-    # AG resizes to 1 Mb it centers exactly on `pos` and the variant lies at
-    # row N // 2 of the values arrays. The asymmetric LEFT/RIGHT flanks (and
-    # the VIEW_START/VIEW_END override below) only affect VISUALIZATION, not
-    # the prediction call (AG always returns 1 Mb centered on POS regardless
-    # of the pre-resize interval length).
+    # PREDICTION interval: always symmetric around the insertion so AG's 1-Mb resize
+    # centers on pos (variant at row N//2). Asymmetric flanks + VIEW_START/END affect
+    # VISUALIZATION only, not the prediction call.
     predict_interval = genome.Interval(
         chromosome=chrom,
         start=max(0, pos - flank_bp),
@@ -170,10 +156,8 @@ for _, row in variant_df.iterrows():
         strand='+',
     )
 
-    # Optional VIEW_START / VIEW_END columns override the flank-based logic
-    # entirely. Useful for views that aren't variant-centered (e.g. zooming in
-    # on the target gene downstream of the insertion). Both must be present
-    # together; values are absolute genome coordinates.
+    # Optional VIEW_START / VIEW_END columns override the flank logic entirely (for
+    # non-variant-centered views, e.g. zooming on a downstream gene). Both required.
     use_view = False
     if ('VIEW_START' in row.index and 'VIEW_END' in row.index
         and pd.notna(row['VIEW_START']) and pd.notna(row['VIEW_END'])
@@ -182,11 +166,8 @@ for _, row in variant_df.iterrows():
         view_start = int(row['VIEW_START'])
         view_end = int(row['VIEW_END'])
 
-    # VISUALIZATION interval: asymmetric flanks supported (left and right
-    # independent). In alt frame, extend the right edge by insert_len so the
-    # inserted sequence's own predicted signal fits in the displayed range.
-    # If VIEW_START/VIEW_END are set, use them directly (no flank_extension
-    # added — user-specified end is treated as a hard bound).
+    # VISUALIZATION interval: asymmetric flanks allowed; in alt frame the right edge
+    # is extended by insert_len. VIEW_START/END, if set, are used as hard bounds.
     flank_extension = insert_len if args.frame == 'alt' else 0
     if use_view:
         interval = genome.Interval(chromosome=chrom, start=view_start,
@@ -206,27 +187,14 @@ for _, row in variant_df.iterrows():
         ontology_terms=[args.ontology],
     )
 
-    # Per-assay (alt, ref) pairs.
-    # AG centers its 1-Mb prediction window on the variant. For an INS of length L,
-    # alt's UPSTREAM-of-insertion rows align with ref correctly; the next L rows
-    # are AG's prediction *for the inserted sequence itself*; rows after that are
-    # alt's downstream-of-insertion (which in ref coords are also aligned but
-    # plotted L positions too far downstream).
-    #
-    # Two coordinate frames available:
-    #   --frame alt (default): extended x-axis = [start, end + L bp). Both alt
-    #     and ref get padded to length N + insert_rows. Alt keeps its insert
-    #     signal at rows [k, k+L); ref gets L zero rows spliced in at row k
-    #     (ref has no equivalent at the insertion site). Downstream of the
-    #     insertion, both are correctly aligned. Variant rendered as a yellow
-    #     highlight band [pos, pos+L) instead of a thin line.
-    #   --frame ref: drop alt's insert rows [k, k+L), shift downstream up by L
-    #     (insert signal lost; tighter ref-frame view).
-    # Two parallel pair lists:
-    #   pairs_orig — untouched alt/ref straight from AG. Used for the BASELINE
-    #     plot (ref-only, "what's there before the insertion") and for ref-frame.
-    #   pairs_var  — frame-transformed pair, used for the DIFF and OVERLAY plots
-    #     where the variant effect is being visualized.
+    # AG centers its 1-Mb prediction on the variant. For an INS of length L, alt's
+    # upstream rows align with ref; the next L rows are AG's prediction for the
+    # inserted sequence; downstream rows align with ref (shifted by L).
+    # Two frames: --frame alt (default) keeps the insert rows and splices L zero
+    # rows into ref at the insertion site (variant drawn as a yellow band);
+    # --frame ref drops the insert rows and shifts downstream up by L.
+    # pairs_orig = untouched alt/ref (baseline + ref-frame); pairs_var = frame-
+    # transformed (diff + overlay).
     pairs_orig = []
     pairs_var  = []
     INTERVAL_BP = 1 << 20  # AG receptive field after resize(2**20)
@@ -235,24 +203,20 @@ for _, row in variant_df.iterrows():
         if attr is None: continue
         if not (hasattr(out.alternate, attr) and hasattr(out.reference, attr)):
             print(f'  skip {assay}: not in AG output'); continue
-        # No try/except wrapping the filter + splice block: the hasattr check
-        # above already handles "assay not returned by AG". Anything that throws
-        # below this point (shape mismatch, metadata-column rename, etc.) is a
-        # real bug that should surface, not get silently downgraded to "skip".
+        # No try/except here: the hasattr check above handles "assay not returned"; any
+        # error below is a real bug that should surface, not be skipped.
         alt_td = getattr(out.alternate, attr)
         ref_td = getattr(out.reference, attr)
-        # Filter ChIP_HISTONE to a user-specified mark subset (substring match
-        # against the track 'name' column in metadata). sys.exit (not raise)
-        # on zero-match — see comment inline below for why.
+        # Filter ChIP_HISTONE to a user-specified mark subset (substring match on track
+        # name). sys.exit (not raise) on zero match — see below.
         if assay == 'CHIP_HISTONE' and args.chip_marks:
             orig_n = alt_td.num_tracks
             track_names = alt_td.metadata['name'].astype(str)
             keep_idx = [i for i, n in enumerate(track_names)
                         if any(m in n for m in args.chip_marks)]
             if not keep_idx:
-                # User-input mismatches are configuration errors and must
-                # terminate the whole script with a clear listing of what
-                # tracks WERE available.
+                # User-input mismatches are config errors: terminate with a listing of the
+                # tracks that WERE available.
                 sys.exit(
                     f'ERROR: --chip-marks={args.chip_marks} matched zero of {orig_n} '
                     f'CHIP_HISTONE tracks for biosample. Available track names:\n  '
@@ -278,9 +242,8 @@ for _, row in variant_df.iterrows():
             ref_td = ref_td.select_tracks_by_index(keep_idx)
             print(f'  {assay}: kept {len(keep_idx)} of {orig_n} tracks ({args.rna_track_filter})')
 
-        # Drop unstranded RNA-seq tracks by default (Liu et al 2026 convention:
-        # use only stranded polyA + stranded total tracks). If GENE_STRAND
-        # column is set in the tab, further restrict to that strand only.
+        # Drop unstranded RNA-seq by default (Liu 2026: stranded polyA + total only). If
+        # GENE_STRAND is set in the tab, restrict to that strand.
         if assay == 'RNA_SEQ':
             orig_n = alt_td.num_tracks
             strands = alt_td.metadata['strand'].astype(str)
@@ -308,15 +271,9 @@ for _, row in variant_df.iterrows():
             N = vals_a.shape[0]
             bp_per_row = INTERVAL_BP / N
             insert_rows = max(1, int(round(insert_len / bp_per_row)))
-            # Derive the variant row from the returned TrackData interval and
-            # assert it matches the expected center row (N//2 ± 1). Avoids the
-            # hidden N//2 assumption — if a future AG API change shifted the
-            # window centering or returned a cropped interval, the splice
-            # would silently miscenter the yellow band; the assertion catches
-            # that case loudly. Empirically matches N//2 exactly across
-            # resolutions (RNA 1 bp, ChIP 128 bp, ATAC 1 bp) for AG SDK v0.6.1;
-            # the ±1-row tolerance absorbs legitimate integer-rounding /
-            # bin-boundary edge cases without crashing otherwise-valid runs.
+            # Derive the variant row from the returned interval and assert it's the center
+            # row (N//2 ± 1): guards against a future AG change shifting the window
+            # centering, which would silently miscenter the yellow band.
             k = round((pos - alt_td.interval.start) / alt_td.resolution)
             assert abs(k - N // 2) <= 1, (
                 f'AG window not centered on variant for {assay}: '
@@ -360,19 +317,16 @@ for _, row in variant_df.iterrows():
         else:
             pairs_var.append((assay, alt_td, ref_td))
 
-    # Output filename: include optional FAMILY and GENE columns from the variant
-    # tab if present, so files are self-describing (e.g.
-    # `LTR5_Hs_HLA-DQA2_SvimAsm00060017_GM12878_overlay.pdf`). Falls back to
-    # `{vid}_{label}_{plot}.pdf` when those columns aren't in the tab.
+    # Output filename includes optional FAMILY / GENE columns when present (self-
+    # describing); falls back to {vid}_{label}_{plot}.pdf otherwise.
     prefix_parts = []
     for col in ('FAMILY', 'GENE'):
         if col in row.index and pd.notna(row[col]) and str(row[col]).strip():
             prefix_parts.append(str(row[col]).strip())
     base = '_'.join(prefix_parts + [vid, args.label]) if prefix_parts else f'{vid}_{args.label}'
 
-    # Original (un-extended) interval — for the baseline plot. Honours the
-    # asymmetric LEFT/RIGHT flanks (same x-axis range as the alt-frame plots
-    # minus the insert-length extension), or the VIEW_START/VIEW_END override.
+    # Original (un-extended) interval for the baseline plot — honours asymmetric
+    # flanks / VIEW_START/END (alt-frame range minus the insert-length extension).
     if use_view:
         interval_orig = genome.Interval(chromosome=chrom, start=view_start,
                                         end=view_end, strand='+')
@@ -392,23 +346,10 @@ for _, row in variant_df.iterrows():
             interval=plot_interval,
             title=f'{vid} ({chrom}:{pos}, {insert_len} bp INS) in {args.label} — {title_extra}',
         )
-        # Highlight the inserted sequence as a yellow band on signal axes when
-        # in alt frame (skip the transcript-annotation axis at top). The band
-        # marks the TRUE genome-coordinate insertion region [pos, pos+insert_len)
-        # plus a half-ChIP-bin pad on each side to absorb the line-interpolation
-        # wedge artifact at band edges (line plots connecting row k-1 with
-        # diff≈0 to row k with diff=S_sva create a triangular fill straddling
-        # the band edge, ~half a bin wide for ChIP tracks at 128 bp resolution;
-        # RNA tracks at 1 bp resolution barely show the artifact).
-        #
-        # Bin-quantization caveat (multi-assay figures): at coarse resolutions
-        # (ChIP 128 bp), the rendered data extends only to pos + insert_rows*128,
-        # which can be slightly less than pos + insert_len (e.g. 256 vs 312 for
-        # a 312 bp insert on a 128 bp bin grid). The band marks the true
-        # insertion in genome coordinates, not the bin-quantized data extent —
-        # the small right-edge gap on ChIP panels is honest bin sampling, not
-        # a misalignment. RNA / ATAC panels (1 bp resolution) match the band
-        # exactly.
+        # Highlight the inserted sequence as a yellow band on signal axes (alt frame
+        # only). The band marks the true genome-coordinate insertion [pos, pos+L) plus
+        # a ChIP pad. At 128 bp ChIP resolution the rendered data may stop slightly short
+        # of pos+L; RNA/ATAC at 1 bp match exactly.
         if draw_band:
             BAND_VISUAL_PAD_BP = 64  # = 128 bp / 2 (half a ChIP bin width)
             # Skip the transcript-annotation axis (the first one) when present,

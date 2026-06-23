@@ -1,26 +1,20 @@
 """
-Annotate Fig 1 Panel B/C outlier candidates with peak width, nearest
-protein-coding gene + distance, nearest-TSS distance, and a region class
-(promoter / proximal / distal).
-
-Reads the TSV from `find_panel_outliers.py`, joins each peak against
-GENCODE v46 protein-coding genes (from the cached feather), and writes
-an annotated TSV suitable for use as a supp table.
-
-Also prints a summary that quantifies the headline observation —
-"AG over-calls at canonical promoters and under-calls at distal
-enhancers/super-enhancers" — by tabulating region_class × direction.
+Annotate outlier candidates with peak width, nearest protein-coding gene +
+distance, nearest-TSS distance, and a region class (promoter / proximal / distal).
+Reads the TSV from find_panel_outliers.py, joins each peak against GENCODE v46
+protein-coding genes, and writes an annotated TSV for use as a supp table. Also
+prints a region_class x direction summary.
 
 Region classes:
-    promoter   : |peak_mid − nearest TSS| < 2 kb
-    proximal   : 2 kb ≤ distance < 20 kb
-    distal     : distance ≥ 20 kb
+    promoter : |peak_mid - nearest TSS| < 2 kb
+    proximal : 2 kb <= distance < 20 kb
+    distal   : distance >= 20 kb
 
-Usage:
-    python scripts/fig1_baseline_chromatin/annotate_panel_outliers.py \
-        --input  tasks/fig1_panel_BC_outlier_candidates.tsv \
-        --gencode data/gencode.v46.annotation.feather \
-        --output supptables/supp_table_fig1_BC_outliers.tsv
+Example usage:
+python scripts/fig1_baseline_chromatin/annotate_panel_outliers.py \
+    --input  tasks/fig1_panel_BC_outlier_candidates.tsv \
+    --gencode data/gencode.v46.annotation.feather \
+    --output supptables/supp_table_fig1_BC_outliers.tsv
 """
 
 import os, argparse, csv, bisect
@@ -32,9 +26,6 @@ import pandas as pd
 PROMOTER_MAX = 2_000     # bp
 PROXIMAL_MAX = 20_000    # bp
 
-# Programmatic slug → human-readable label for the supp table. The
-# intermediate `find_panel_outliers.py` output keeps the slugs so other
-# scripts (e.g. plot_peak_correlation.py --highlight-tsv) can pattern-match.
 DIRECTION_DISPLAY = {
     'B_over':  'AG over-predicts H3K27ac (red dots)',
     'C_under': 'AG under-predicts H3K27ac (blue dots)',

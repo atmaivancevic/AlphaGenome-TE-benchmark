@@ -1,27 +1,24 @@
 """
-Fig 1 Panel B/C browser shot: experimental ENCODE H3K27ac vs AlphaGenome-
-predicted H3K27ac at a single biosample/locus, with a GENCODE gene track.
+Browser shot: experimental ENCODE H3K27ac (fold-change bigWig) vs AG-
+predicted H3K27ac at one biosample/locus, plus a GENCODE v46 gene track. The
+outlier peak span is highlighted in orange. The two signal tracks keep
+INDEPENDENT y-axes (ENCODE fold-change and AG output scales aren't comparable).
 
-Three stacked tracks sharing the genomic x-axis (top -> bottom):
-  1. ENCODE H3K27ac        — fold-change bigWig signal (dark red #8B1A1F)
-  2. AlphaGenome H3K27ac   — AG-predicted signal, same biosample (light red)
-  3. Gene track            — GENCODE v46 protein-coding, longest transcript/gene
+Example usage (NFKBIA, AG over-prediction in GM12878):
+python scripts/fig1_baseline_chromatin/plot_panel_BC_browser.py \
+    --label NFKBIA --biosample GM12878 --ontology EFO:0002784 \
+    --bigwig data/encode_h3k27ac/bigwigs/human/ENCSR000AKC_ENCFF469WVA.bigWig \
+    --coords chr14:35395000-35415000 --peak 35404062-35406008 \
+    --exp-ymax 80 --ag-ymax 11000 --width-pt 264.0439 --height-pt 196.2063 \
+    --output figures/FIG1_FINAL/Fig1BC_browser/NFKBIA_GM12878.pdf
 
-The outlier peak span is highlighted with an orange band across all tracks
-(Fig 4/5 convention). The two signal tracks keep INDEPENDENT y-axes — the
-ENCODE fold-change scale and the AG output scale are not comparable, so the
-story is the *shape* contrast (does one signal sit where the other is absent),
-not absolute height. Each signal axis prints a single top tick = its own max.
-
-This is a standalone matplotlib renderer (no AG-SDK plot_components), so the
-locked assay palette is applied directly — no pikepdf recolor pass needed.
-
-Usage:
-  python scripts/fig1_baseline_chromatin/plot_panel_BC_browser.py \
-      --label NFKBIA --biosample GM12878 --ontology EFO:0002784 \
-      --bigwig data/encode_h3k27ac/bigwigs/human/ENCSR000AKC_ENCFF469WVA.bigWig \
-      --coords chr14:35395000-35415000 --peak 35404062-35406008 \
-      --output figures/FIG1_FINAL/Fig1BC_browser/NFKBIA_GM12878.pdf
+Example usage (PCDH7, AG under-prediction in HCT116):
+python scripts/fig1_baseline_chromatin/plot_panel_BC_browser.py \
+    --label PCDH7 --biosample HCT116 --ontology EFO:0002824 \
+    --bigwig data/encode_h3k27ac/bigwigs/human/ENCSR000EUT_ENCFF169MCH.bigWig \
+    --coords chr4:30690000-30920000 --peak 30739840-30874140 \
+    --exp-ymax 100 --ag-ymax 3000 --width-pt 264.0439 --height-pt 196.2063 \
+    --output figures/FIG1_FINAL/Fig1BC_browser/PCDH7_HCT116.pdf
 """
 
 import os, sys, argparse, re
@@ -37,9 +34,8 @@ mpl.rcParams['font.sans-serif'] = ['Helvetica', 'Arial', 'DejaVu Sans']
 mpl.rcParams['pdf.fonttype']    = 42
 BOLD_FONT = 'Arial'   # Mac Helvetica.ttc exposes no bold to matplotlib; Arial Bold substitutes
 
-# Locked assay palette (reference_assay_color_palette). Experimental H3K27ac
-# is the canonical dark red; the AG prediction gets a lighter tint of the same
-# hue so the pair reads as "same mark, measured vs predicted".
+# Locked assay palette: experimental H3K27ac = dark red, AG prediction = a
+# lighter tint of the same hue (measured vs predicted).
 EXP_COLOR = '#8B1A1F'
 AG_COLOR  = '#C77478'
 EXON_COLOR = '#000000'
@@ -184,10 +180,7 @@ gene_ratio = 0.16 + 0.24 * n_gene_rows
 hspace = 0.18
 if EXACT:
     figsize = (args.width_pt / 72.0, args.height_pt / 72.0)
-    # Figure-panel proportions: taller gene annotation (also opens up the
-    # gene-model -> chromosome-axis gap, which lives inside the gene panel)
-    # with only modest inter-panel spacing so the gene model sits close under
-    # the signal tracks.
+    # Panel proportions: taller gene track, modest inter-panel spacing.
     gene_ratio = 0.45 + 0.32 * n_gene_rows
     hspace = 0.22
 else:
@@ -210,10 +203,8 @@ def _signal(ax, y, color, ymax, label):
 _signal(ax_e, enc_y, EXP_COLOR, args.exp_ymax, 'ENCODE\nH3K27ac')
 _signal(ax_a, ag_y,  AG_COLOR,  args.ag_ymax,  'AG\nH3K27ac')
 
-# Gene track. Rows stack top-down (row 0 at top); each gene labelled just
-# below its model. ylim inverted (larger value first) so row 0 sits at top.
-# Small top padding (-0.3) keeps the gene model close under the signal tracks;
-# the larger bottom padding leaves the gene-model -> chromosome-axis gap.
+# Gene track: rows stack top-down (row 0 at top, via inverted ylim); each gene
+# labelled just below its model.
 ax_g.set_ylim(n_gene_rows - 0.55, -0.18)
 for s in ('top', 'right', 'left'):
     ax_g.spines[s].set_visible(False)
@@ -297,12 +288,9 @@ for ax in (ax_e, ax_a):
         c.set_rasterized(True)
 
 if EXACT:
-    # Fixed margins (fractions of the exact canvas) so content sits correctly:
-    # left = track labels, bottom = x-axis label, top = title (reclaimed when
-    # --no-title). Save with an explicit fixed Bbox = the full canvas so the
-    # PDF page is EXACTLY width-pt x height-pt — without it the mixed
-    # vector/raster PDF renderer snaps the page to the dpi pixel grid and the
-    # size drifts by ~0.5 pt.
+    # Fixed margins + an explicit save Bbox = the full canvas so the PDF page is
+    # EXACTLY width-pt x height-pt (without it the mixed vector/raster renderer
+    # snaps to the dpi grid and the size drifts ~0.5 pt).
     from matplotlib.transforms import Bbox
     # Reserve top space for both the centred title (very top) and the bold
     # biosample header that sits just above the top track.

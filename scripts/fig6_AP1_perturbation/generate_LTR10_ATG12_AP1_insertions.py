@@ -1,49 +1,15 @@
 """
-Generate AP1-motif ADDITION alleles for LTR10.ATG12 (Fig 6 Panel A
-extension past WT). Companion to generate_LTR10_ATG12_AP1_perturbations.py.
+Generate AP1-motif ADDITION alleles for LTR10.ATG12 (Fig 6 Panel A, past WT).
+Companion to generate_LTR10_ATG12_AP1_perturbations.py. Overwrites non-AP1 7-bp
+windows of the WT element with TGAGTCA in place — length-preserving substitution
+variants (REF + ALT both 2,358 bp), no coordinate shifts. Adds 5..220 new motifs
+(totals 25..240); new positions are non-overlapping, seeded, lower-N subsets of higher-N.
 
-Strategy: edit non-AP1 sequence in the WT element in place — overwrite
-selected 7-bp windows of non-motif sequence with TGAGTCA. This is a
-length-preserving MNV perturbation (REF and ALT both 2,358 bp), matching
-the scrambling perturbations in the companion script. No tandem-insertion
-length shifts, no AG window/coord changes between alleles.
-
-Generated alleles (8 — same MNV format as the scrambling perturbations):
-
-  add05  → 25  motifs total (+5   new AP1 motifs)
-  add10  → 30  motifs total (+10  new AP1 motifs)
-  add20  → 40  motifs total (+20  new AP1 motifs)
-  add60  → 80  motifs total (+60  new AP1 motifs)
-  add80  → 100 motifs total (+80  new AP1 motifs)
-  add120 → 140 motifs total (+120 new AP1 motifs)
-  add180 → 200 motifs total (+180 new AP1 motifs)
-  add220 → 240 motifs total (+220 new AP1 motifs; near max for the
-                              random-shuffle greedy used here)
-
-Picking new motif positions:
-  - Candidate windows: all 7-bp windows in WT that DO NOT overlap any
-    existing AP1 motif (TGA[CGA]TCA forward or reverse-complement) AND
-    do not themselves contain an AP1 motif by chance.
-  - Non-overlapping constraint: picked windows must be at least 7 bp apart
-    (no overlapping new motifs).
-  - Pick order: deterministic with fixed RNG seed (shuffled candidates →
-    greedy accept). Lower-N alleles are strict subsets of higher-N
-    (add05 ⊂ add10 ⊂ ... ⊂ add220). With random-shuffle greedy the
-    achievable maximum is ~246 picks; we cap at 220 to stay safely below.
-    Packed greedy (sort by position) could reach ~316 motifs but at the
-    cost of biological "scattering" — motifs would crowd the left half
-    of the element. We chose the random-shuffle version so new motifs
-    spread across the full element length.
-
-Output: same MNV variant-tab format as the scramble perturbations →
-plug directly into score_variant_lfc.py / score_variant_chromatin.py /
-predict_variant_tracks.py with --allow-mnv.
-
-Usage:
-    python scripts/fig6_AP1_perturbation/generate_LTR10_ATG12_AP1_insertions.py \\
-        --variants  data/LTR10_variants.tab \\
-        --out       data/LTR10_ATG12_AP1_insertions.tab \\
-        --motif-log data/LTR10_ATG12_AP1_insertions.md
+Example usage:
+python scripts/fig6_AP1_perturbation/generate_LTR10_ATG12_AP1_insertions.py \
+    --variants  data/LTR10_variants.tab \
+    --out       data/LTR10_ATG12_AP1_insertions.tab \
+    --motif-log data/LTR10_ATG12_AP1_insertions.md
 """
 import argparse
 import random
@@ -175,7 +141,7 @@ for suffix, n_new in ADD:
         'total_motifs':        total_motifs,
         'new_motif_positions': ','.join(str(p) for p in sorted(new_positions)),
         'description':         f'{n_new} new TGAGTCA motifs written into non-AP1 7-bp '
-                               f'windows (MNV, same length as WT) → {total_motifs} motifs total'
+                               f'windows (substitution variant, same length as WT) → {total_motifs} motifs total'
     })
 
 out = pd.DataFrame(rows)
@@ -188,7 +154,7 @@ print(out[['ID','POS','n_new_motifs','total_motifs']].to_string(index=False))
 log = []
 log.append('# LTR10.ATG12 AP1 ADDITION alleles\n')
 log.append(f'**WT element**: {chrom}:{pos:,}-{pos+len(seq)-1:,}  ({len(seq)} bp; 20 AP1 motifs in two VNTR arrays)\n')
-log.append(f'**Strategy**: write new TGAGTCA motifs in place over non-AP1 7-bp windows (MNV — same length as WT)\n')
+log.append(f'**Strategy**: write new TGAGTCA motifs in place over non-AP1 7-bp windows (substitution variant — same length as WT)\n')
 log.append(f'**RNG seed**: {args.seed}  (controls which non-AP1 windows are picked)\n')
 
 log.append(f'\n## Candidate pool\n')
@@ -206,9 +172,9 @@ for r in rows:
     log.append(f'| `{r["ID"]}` | {r["n_new_motifs"]} | {r["total_motifs"]} | `{r["new_motif_positions"]}` |\n')
 
 log.append(f'\n## File format\n')
-log.append('REF and ALT are both 2,358 bp (MNV — same length, different content at the new-motif positions).\n')
+log.append('REF and ALT are both 2,358 bp (substitution variant — same length, different content at the new-motif positions).\n')
 log.append('Compatible with score_variant_lfc.py / score_variant_chromatin.py / predict_variant_tracks.py\n')
-log.append('via the existing `--allow-mnv` flag (same as the scrambling perturbations).\n')
+log.append('via the existing `--allow-sub` flag (same as the scrambling perturbations).\n')
 
 with open(args.motif_log, 'w') as f:
     f.writelines(log)

@@ -1,25 +1,15 @@
 """
-Fig 6 Panel A1 — AP1 motif titration: AG-predicted TF binding (FOSL1 + JUND).
+Fig 6 Panel A1 — AP1 motif titration: AG-predicted TF binding (FOSL1 + JUND) on a
+shared y-axis. Both climb near-linearly with motif count through 200 motifs (AG
+predicts TF binding as motif-counting), unlike the saturating chromatin in Panel A2.
+X = intact AP1 motifs (0-200, scramble + addition alleles); Y = raw AG ChIP signal.
 
-Single subplot, shared y-axis (TFs scale similarly and both climb linearly
-with motif count). Companion to plot_fig6_panelA2_chromatin_RNA_titration.py
-which handles the downstream H3K27ac + ATG12 RNA panels.
-
-X-axis: number of intact AP1 motifs (0 → 200, spanning scrambled + addition
-alleles). Y-axis: raw AG-predicted ChIP peak signal (signal_mean).
-
-The point of this panel is to make visually obvious that AG predicts AP1
-family TF binding as a near-linear motif-counting relationship — the easy
-thing to learn from ChIP-seq data. Both curves climb through 200 motifs
-without saturation, in contrast to the downstream chromatin output which
-plateaus at the training-distribution ceiling (Panel A2).
-
-Usage:
-    python scripts/fig6_AP1_perturbation/plot_fig6_panelA1_TF_titration.py \\
-        --chromatin-csv \\
-            results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element.csv \\
-            results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element_INS.csv \\
-        --output figures/FIG6_FINAL/panelA1_TF_titration.pdf
+Example usage:
+python scripts/fig6_AP1_perturbation/plot_fig6_panelA1_TF_titration.py \
+    --chromatin-csv \
+        results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element.csv \
+        results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element_INS.csv \
+    --output figures/FIG6_FINAL/panelA1_TF_titration.pdf
 """
 import argparse
 from pathlib import Path
@@ -68,9 +58,8 @@ TITRATION = {
     'LTR10.ATG12_add160':   180,
     'LTR10.ATG12_add170':   190,
     'LTR10.ATG12_add180':   200,
-    # Note: add190/200/210/220 alleles exist in the variant tab (210-240
-    # motifs) but are excluded from this plot — at the user's call we cap
-    # x-axis at 200 motifs since the plateau is fully established by then.
+    # add190-220 alleles (210-240 motifs) exist in the tab but are excluded;
+    # x-axis capped at 200 (plateau already established).
 }
 
 def raw_curve(csv_paths, track_substring):

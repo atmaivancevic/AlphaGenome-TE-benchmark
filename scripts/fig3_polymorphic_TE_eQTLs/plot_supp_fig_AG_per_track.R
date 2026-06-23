@@ -1,26 +1,13 @@
 #!/usr/bin/env Rscript
 #
-# scripts/fig3_polymorphic_TE_eQTLs/plot_supp_fig_AG_per_track.R
+# Per-track AlphaGenome raw_score + quantile_score for the four headline Fig 3
+# candidates, exposing within-protocol RNA-seq variability (stranded total /
+# stranded polyA / unstranded polyA) — most agree, but small inserts (e.g. the
+# NR1H3 53 bp SVA) can show stranded-vs-unstranded disagreement. Outputs a
+# multi-panel vector PDF + per-variant PDFs.
 #
-# Renders Supp Fig SX: per-track AlphaGenome raw_score and quantile_score for
-# the four headlined Fig 3 candidate variants. Exposes within-protocol
-# variability (stranded total / stranded polyA / unstranded polyA) so readers
-# can see when the three RNA-seq tracks AG returns for GM12878 agree vs
-# diverge — most cases agree, but small / fragmentary inserts (e.g. NR1H3
-# 53 bp SVA) can show meaningful unstranded-vs-stranded disagreement.
-#
-# Output is a multi-panel vector PDF (default `pdf` device), each subpanel
-# editable independently in Illustrator. Per-variant individual PDFs also
-# written alongside for fallback / manual composition.
-#
-# Usage:
-#   Rscript scripts/fig3_polymorphic_TE_eQTLs/plot_supp_fig_AG_per_track.R
-#
-# Inputs:
-#   results/AG_LFC_polymorphic_TE/SvimAsm{...}_GM12878.csv (per-variant)
-# Output:
-#   figures/supp_fig_AG_per_track/supp_fig_AG_per_track.pdf  (composite)
-#   figures/supp_fig_AG_per_track/{variant_id}_{gene}.pdf    (per variant)
+# Example usage:
+# Rscript scripts/fig3_polymorphic_TE_eQTLs/plot_supp_fig_AG_per_track.R
 
 suppressPackageStartupMessages({
   library(optparse); library(dplyr); library(readr); library(ggplot2); library(patchwork)
@@ -41,9 +28,8 @@ candidates <- tibble::tribble(
   "SvimAsm00060017",   "LTR5_Hs",  "HLA-DQA2",  4L
 )
 
-# Two-track decomposition (Liu et al 2026 convention): stranded total RNA-seq
-# + stranded polyA RNA-seq. Unstranded polyA tracks (track_strand == '.')
-# are dropped from both the visualization and the supp-table scoring.
+# Two-track decomposition (Liu 2026): stranded total + stranded polyA RNA-seq;
+# the unstranded polyA track (strand == '.') is dropped.
 TRACK_COLORS <- c(
   "total RNA-seq (stranded)"     = "#3A7CA5",   # blue
   "polyA RNA-seq (stranded)"     = "#5BA75A"    # green

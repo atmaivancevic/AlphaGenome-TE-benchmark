@@ -1,39 +1,21 @@
 #!/usr/bin/env Rscript
 #
-# scripts/fig3_polymorphic_TE_eQTLs/plot_fig3_eqtl_boxplots.R
+# Per-candidate eQTL boxplot renderer for Fig 3. One PDF per (variant, gene):
+# INT(residual expression) by genotype dose (0/1/2) with jittered points and a
+# dosage-mean trend line, titled with the eQTL beta/p/q and the AG raw/quantile
+# score (from Supp Table 5; AG line omitted when there's no AG score). Reads the
+# cached cohort inputs from eqtl_matrixeqtl_pipeline.R.
 #
-# Per-candidate eQTL boxplot renderer for Fig 3 (Ivancevic et al.).
-# Renders one PDF per (variant, gene) pair from the candidate working set,
-# using cached inputs from scripts/eqtl_matrixeqtl_pipeline.R.
-#
-# Per-PDF content (Bravo et al. 2024 Fig 2 convention + transparency-mode β/p/q):
-#   - Boxplot of INT(residual expression) by genotype dose (0/1/2)
-#   - Jittered points overlay
-#   - Title:    {variant_id}: {family}/{gene_symbol}, |{SVLEN}| bp
-#                ({signed TE-gene distance kb})
-#   - Subtitle line 1 (eQTL stats): β = X.XXX  p = Y.YE-Z  q = W.WE-V  ({cohort})
-#   - Subtitle line 2 (AG comparison): AG_raw = X.XXX  AG_qtl = ±Y.YYY
-#   - X-axis tick labels include n per genotype class
-#   - Linear-trend line through dosage means
-#
-# AG scores are looked up from supptables/supp_table_5_all_variant_gene_pairs.tsv
-# (per-(variant, gene) AG_RNA_raw_score and AG_RNA_quantile_score). When the (variant,
-# gene) pair has no AG score (gene-desert or v38↔v46 ENSG mismatch) the AG line
-# is omitted.
-#
-# Output naming: {variant_id}_{gene_symbol}.pdf
-#
-# Usage:
-#   Rscript scripts/fig3_polymorphic_TE_eQTLs/plot_fig3_eqtl_boxplots.R --cohort MAGE
-#   Rscript scripts/fig3_polymorphic_TE_eQTLs/plot_fig3_eqtl_boxplots.R --cohort GEUVADIS
+# Example usage:
+# Rscript scripts/fig3_polymorphic_TE_eQTLs/plot_fig3_eqtl_boxplots.R --cohort MAGE
+# Rscript scripts/fig3_polymorphic_TE_eQTLs/plot_fig3_eqtl_boxplots.R --cohort GEUVADIS
 
 suppressPackageStartupMessages({
   library(optparse); library(dplyr); library(readr); library(ggplot2); library(cowplot); library(ggtext)
 })
 
-# Concordance banner lookup: maps the AG_RNA_concordance_with_MAGE value
-# (categorical, set in scripts/fig3_polymorphic_TE_eQTLs/merge_AG_scores_into_supp_tables.py) to display
-# text + fill colour. Banner appears as a coloured strip above the plot title.
+# Concordance banner lookup: maps the AG_RNA_concordance_with_MAGE value to
+# display text + fill colour (a coloured strip above the plot title).
 banner_for <- function(concordance) {
   switch(concordance,
     "match_high_confidence"    = list(text = "HIGH-CONFIDENCE CONCORDANCE",  fill = "#14512A"),
@@ -65,9 +47,8 @@ stopifnot(opt$cohort %in% c("MAGE","GEUVADIS"))
 opt$variant_class <- toupper(opt$variant_class)
 stopifnot(opt$variant_class %in% c("INS", "DEL"))
 
-# Variant-class plumbing — DEL uses parallel results dirs + Supp 8 + DEL
-# boxplot output dir. The single difference at render time is the boxplot
-# title text ("insertion" vs "deletion"), picked from sign(SVLEN).
+# Variant-class handling — DEL uses parallel results dirs + Supp 8 + a DEL output
+# dir; at render time the only difference is the title verb (insertion/deletion).
 suffix <- if (opt$variant_class == "INS") "" else "_DEL"
 cohort_dir <- paste0(if (opt$cohort == "MAGE") "results/eqtl_matrixeqtl_MAGE260"
                                           else "results/eqtl_matrixeqtl_GEUVADIS121",
@@ -114,10 +95,8 @@ supp5 <- read_tsv(opt$supp5, show_col_types = FALSE) %>%
 cat(sprintf("Loaded Supp 5: %d (variant, gene) pairs (%d with AG scores)\n",
             nrow(supp5), sum(!is.na(supp5$AG_RNA_raw_score))))
 
-# Per-variant target-gene metadata for the strand-aware "intragenic / intergenic;
-# N kb up/downstream of TSS" label. GENCODE v46 coords. Adding more candidates
-# here (or reading from GENCODE on-the-fly) would let this generalise beyond
-# the four Fig 2/3 locked candidates.
+# Per-variant target-gene metadata for the strand-aware distance label (in gene
+# body / intergenic; N kb up/downstream of TSS). GENCODE v46 coords.
 gene_info_locked <- tibble::tribble(
   ~variant_id,        ~gene_strand, ~gene_start, ~gene_end,
   # INS exemplars (Fig 3 panels A/B/C + Fig 2 LTR5_Hs)
@@ -141,10 +120,8 @@ if (!is.null(opt$only_variant)) {
   }
 }
 
-# Typography — Fig 3 paper-figure defaults.
-# Tuned for 150 × 200 pt panels: 11 pt axis titles + 8 pt ticks (Atma's
-# scatter convention). Title + subtitle fonts shrunk a touch to fit the
-# narrower panel.
+# Typography — Fig 3 paper-figure defaults (150 x 200 pt panels: 11 pt axis
+# titles, 8 pt ticks).
 PLOT_FONT   <- "Helvetica"
 FS_TITLE    <- 10
 FS_SUBTITLE <- 7
@@ -209,11 +186,8 @@ for (i in seq_len(nrow(candidates))) {
   cohort_label <- if (opt$cohort == "MAGE") sprintf("MAGE cohort n=%d",     ncol(int_mat))
                   else                       sprintf("GEUVADIS cohort n=%d", ncol(int_mat))
 
-  # Strand-aware distance label with in-gene-body / intergenic flag. Falls
-  # back to the genome-coordinate signed distance if the variant isn't in
-  # gene_info_locked. We use "in gene body" vs "intergenic" (instead of
-  # "intragenic" vs "intergenic") to avoid the visual near-collision between
-  # the two terms — they differ by only one letter and are easily misread.
+  # Strand-aware distance label (in gene body / intergenic), falling back to the
+  # genome-coord signed distance when the variant isn't in gene_info_locked.
   variant_pos <- ag_hit$pos[1]
   gi <- gene_info_locked %>% filter(variant_id == vid)
   if (nrow(gi) == 1) {
@@ -228,38 +202,22 @@ for (i in seq_len(nrow(candidates))) {
   } else {
     dist_tag <- sprintf("%+.1f kb to TSS", distance_kb)
   }
-  # Bold title forced to two lines via explicit <br>:
-  #   line 1: "{family} insertion ({size} bp):"
-  #   line 2: "eQTL for gene {gene}"
-  # Verb ("insertion" / "deletion") picked from sign(SVLEN) — positive = INS,
-  # negative = DEL. Location-to-TSS detail (`dist_tag`) moved to figure
-  # caption.
+  # Bold two-line title via explicit <br>: "{family} insertion ({size} bp):" /
+  # "eQTL for gene {gene}". Verb (insertion/deletion) from sign(SVLEN).
   vtype_word <- if (hit$SVLEN < 0) "deletion" else "insertion"
   title_str <- sprintf("<b>%s %s (%d bp):<br>eQTL for gene %s</b>",
                        fam, vtype_word, ins_len, gn)
 
-  # Subtitle: two prefix-aligned lines. Uses ggtext::element_markdown to
-  # bold + enlarge the two headline numbers (beta and AG effect score)
-  # inline. The row labels both end in "RNA results:" — that colon serves
-  # as the visual anchor that aligns the two rows. "beta" rendered as
-  # ASCII (not β) because pdf() device can't render Greek without cairo
-  # (and cairo libs are not available locally).
-  # Minimalist Avsec-style subtitle (Avsec 2026 Fig 4d): two lines, headline
-  # values bolded as eye anchors. Cohort label + AG terminology details
-  # ("raw score", "quantile") moved to figure legend to keep the panel face
-  # uncluttered.
-  # Banner colour lookup moved here (also used as the colour of the bolded
-  # "Predicted effect size" subtitle line — banner colour + bold subtitle
-  # together visually signal the AG-vs-MAGE concordance call).
+  # Subtitle (Avsec 2026 Fig 4d style): two prefix-aligned lines, headline numbers
+  # (beta, AG effect) bolded via ggtext as eye anchors. "beta" written ASCII since
+  # pdf() can't render Greek without cairo. Predicted line tinted with the banner colour.
   bn <- banner_for(if (is.na(ag_concordance)) "" else ag_concordance)
   beta_md   <- sprintf("<b>%+.3f</b>", beta)
   ag_raw_md <- if (is.na(ag_raw)) "NA" else sprintf("%+.3f", ag_raw)
   ag_qtl_md <- if (is.na(ag_qtl)) "NA" else sprintf("%+.3f", ag_qtl)
-  # Predicted (AG) first, Observed (MAGE) second. Each line has the headline
-  # value (6 pt) followed inline by its parenthetical (5 pt) — quantile for
-  # AG, FDR q for MAGE. Predicted line is bold + tinted with the banner
-  # colour. Raw p dropped — q is the value that determines whether to
-  # believe the eQTL (full p available in Supp 4/7).
+  # Predicted (AG) line first, Observed (MAGE) second; each headline value (6 pt)
+  # followed by its parenthetical (5 pt) — AG quantile, MAGE FDR q. Predicted line
+  # bold + banner-coloured. (Raw p dropped; q is in Supp 4/7.)
   line1 <- sprintf("<span style='color:%s'><b>Predicted effect size: %s</b> <span style='font-size:6pt'>(quantile = %s)</span></span>",
                    bn$fill, ag_raw_md, ag_qtl_md)
   line2 <- sprintf("Observed effect size: %s <span style='font-size:6pt'>(q = %.2e)</span>",
@@ -269,14 +227,9 @@ for (i in seq_len(nrow(candidates))) {
   # Compute group means for trend-line overlay
   means <- aggregate(expr ~ dose, data = d, FUN = mean)
 
-  # Per-family 3-shade dose gradient (light = 0/0, mid = 0/1, dark = 1/1).
-  # Boxes stay grey across panels — the family identity is carried by the
-  # dot colour palette only. Same family hues will ride through into the
-  # AG-vs-MAGE scatter (Panel D) so the eye links panels A/B/C to their
-  # cloud of points in D.
-  # Alu uses a grey dose gradient — matches the Panel D scatter
-  # convention (Alu = "background family", 84% of testable variants;
-  # rare families keep saturated hues so they pop).
+  # Per-family 3-shade dose gradient (light 0/0 -> dark 1/1); boxes stay grey so
+  # family identity reads from dot colour only (same hues carry into the Panel D
+  # scatter). Alu uses grey (background family, 84% of variants); rare families keep saturated hues.
   dose_palettes <- list(
     Alu     = c("0" = "#CFCFCF", "1" = "#888888", "2" = "#4D4D4D"),
     L1      = c("0" = "#C9BFE3", "1" = "#7E6BBF", "2" = "#4A3982"),
@@ -311,10 +264,8 @@ for (i in seq_len(nrow(candidates))) {
           axis.text     = element_text(size = FS_TICK, family = PLOT_FONT),
           panel.grid = element_blank())
 
-  # Concordance banner: coloured strip above the plot title showing the
-  # AG-vs-MAGE call from Supp 5. Single source of truth — swap candidates
-  # and the banner updates automatically. `bn` was computed earlier (also
-  # used as the bold-subtitle colour).
+  # Concordance banner: coloured strip above the title showing the AG-vs-MAGE call
+  # from Supp 5 (auto-updates when candidates change).
   banner_p <- ggplot() +
     annotate("rect", xmin = 0, xmax = 1, ymin = 0, ymax = 1, fill = bn$fill) +
     annotate("text", x = 0.5, y = 0.5, label = bn$text, colour = "white",

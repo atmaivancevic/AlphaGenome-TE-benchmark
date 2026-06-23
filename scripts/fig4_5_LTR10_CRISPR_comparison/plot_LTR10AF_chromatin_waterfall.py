@@ -1,27 +1,15 @@
 """
-Waterfall plot of 650 merged LTR10A/F elements ranked by AlphaGenome-predicted
-chromatin peak score (H3K27ac or FOSL1). Used as Fig 5 Panel A.
+Waterfall of the 650 merged LTR10A/F elements ranked by AG-predicted chromatin
+peak score (H3K27ac or FOSL1) — Fig 5 Panel A. Bars sorted descending, coloured
+grey (no experimental data), orange (113 with experimental peaks), red (the 8
+CRISPR-validated fragments, labelled by gene). 2 of the 6 CRISPR enhancers span
+two LTR10A/F fragments, so 6 elements appear as 8 bars. Input: Supp Table 11.
 
-Each element is a bar with its predicted peak score on y; bars are sorted
-descending. Three colour layers:
-  - grey   = elements with no experimental peak data (the "background" set)
-  - orange = elements with experimental peak data (the 113 "candidate" set)
-  - red    = the 8 CRISPR-validated fragments (Ivancevic 2024 Tables S15-S20)
-
-The 8 CRISPR-validated bars are labelled with their target gene names.
-Note: 2 of the 6 CRISPR-tested LTR10 enhancers (LTR10.ATG12, LTR10.XRCC4)
-are long enough to span two RepeatMasker-annotated LTR10A/F fragments in
-the merged 650-set, so they appear as 8 bars representing 6 elements.
-This is documented in the legend.md for Fig 5.
-
-Source data:
-  supptables/supp_table_11_LTR10AF_experimental_vs_AG.tsv
-
-Usage:
-    python scripts/fig4_5_LTR10_CRISPR_comparison/plot_LTR10AF_chromatin_waterfall.py \\
-        --input supptables/supp_table_11_LTR10AF_experimental_vs_AG.tsv \\
-        --mark H3K27ac \\
-        --output figures/FIG5_FINAL/panelA_LTR10AF_H3K27ac_waterfall.pdf
+Example usage:
+python scripts/fig4_5_LTR10_CRISPR_comparison/plot_LTR10AF_chromatin_waterfall.py \
+    --input supptables/supp_table_11_LTR10AF_experimental_vs_AG.tsv \
+    --mark H3K27ac \
+    --output figures/FIG5_FINAL/panelA_LTR10AF_H3K27ac_waterfall.pdf
 """
 import argparse
 from pathlib import Path
@@ -101,12 +89,8 @@ idx_crispr = sorted_df[sorted_df['is_crispr']].index
 ax.bar(idx_crispr, sorted_df.loc[idx_crispr, pred_col].values,
        width=1.0, color='#E62020', alpha=1.0, linewidth=0.3, edgecolor='darkred', zorder=4)
 
-# Annotate CRISPR-validated bars with their target name. By default
-# all 8 are labelled (no leader arrow); --only-label restricts to a
-# subset (e.g. just LTR10.ATG12_1 for the poster) and draws a leader
-# arrow from the rotated text down to the bar tip — necessary at
-# poster scale where 650 bars are compressed into ~10 inches and a
-# floating rotated label has no visible association with any one bar.
+# Annotate CRISPR-validated bars with their target gene. Default labels all 8;
+# --only-label restricts to a subset and draws a leader arrow (for poster scale).
 single_label_mode = args.only_label is not None and len(args.only_label) == 1
 for idx_val in idx_crispr:
     row = sorted_df.iloc[idx_val]

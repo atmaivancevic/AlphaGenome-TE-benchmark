@@ -1,18 +1,11 @@
-#!/usr/bin/env bash
-# Download ENCODE H3K27ac fold-change bigWigs by accession, with md5
-# verification fetched from the ENCODE REST API on the fly. Mirrors the
-# pattern of fetch_encode_h3k27ac_peaks.sh but stays per-file (bigwigs
-# are large; we only fetch the biosamples we need, not all 159).
-#
-# Output naming and dir parallel the peaks layout:
-#   data/encode_h3k27ac/bigwigs/human/<ENCSR>_<ENCFF>.bigWig
-#
-# The ENCSR is looked up via the same /files/<ENCFF>?format=json call
-# that gives us the md5, so we only need accessions as input.
-#
-# Usage:
-#   bash scripts/fig1_baseline_chromatin/fetch_encode_h3k27ac_bigwigs.sh ENCFF169MCH ENCFF469WVA
-#
+#!/bin/bash
+
+## Download ENCODE H3K27ac bigWigs by accession, verifying md5 from
+## the ENCODE REST API. BigWigs are large, so only the biosamples we need are
+## fetched. Output: data/encode_h3k27ac/bigwigs/human/<ENCSR>_<ENCFF>.bigWig
+##
+## Example usage (HCT116 + GM12878):
+## bash scripts/fig1_baseline_chromatin/fetch_encode_h3k27ac_bigwigs.sh ENCFF169MCH ENCFF469WVA
 set -euo pipefail
 
 OUT="${OUT:-data/encode_h3k27ac/bigwigs/human}"

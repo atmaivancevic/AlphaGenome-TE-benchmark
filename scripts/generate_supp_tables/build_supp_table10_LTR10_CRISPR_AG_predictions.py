@@ -1,77 +1,21 @@
 """
 Build Supp Table 10 — AlphaGenome predictions for the six CRISPRi-validated LTR10
-enhancers (plus one matched control deletion) joined with the Ivancevic 2024
-CRISPRi DESeq2 results (Tables S15-S20). One row per (variant, gene).
+enhancers (+1 control) joined with the Ivancevic 2024 CRISPRi DESeq2 results. One
+row per (variant, gene), in three categories: Both (gene scored by AG within
++/-500 kb AND in the CRISPRi table), CRISPR-only (CRISPR-sig down-regulated gene
+within +/-10 Mb but outside AG's window), and AG-only (scored by AG, absent from
+the CRISPRi table). Protein-coding genes only, with an explicit non-coding allowlist
+(e.g. AC108174.1 near LTR10.XRCC4). RNA = mean of stranded RNA-seq tracks only.
 
-Three categories of rows per variant (sorted within each variant by
-|crispr_log2FoldChange| descending; AG-only rows with no CRISPR value are
-appended at the bottom of each block sorted by |AG_RNA_raw_score| descending):
-
-  1. Both:        gene scored by AG (within ±500 kb of variant, protein_coding)
-                  AND listed in the CRISPRi DESeq2 table. AG + CRISPR cols
-                  populated; notes blank.
-  2. CRISPR-only: protein_coding gene with padj < 0.05 AND
-                  log2FoldChange < 0 (down-regulated) in the DESeq2 table,
-                  same chromosome as the variant, within ±10 Mb of the variant
-                  midpoint, but outside AG's ±500 kb scoring window. AG cols
-                  blank; notes flag the architectural exclusion. Up-regulated
-                  CRISPR-only hits are excluded — they are typically secondary
-                  / trans effects and don't represent the canonical "enhancer
-                  positively regulates target gene" relationship AG should
-                  have caught.
-  3. AG-only:     gene scored by AG but absent from the DESeq2 table (likely
-                  not expressed in HCT116 / filtered out by DESeq2 independent
-                  filtering). CRISPR cols blank; notes flag the absence.
-
-The ±10 Mb cis scope matches the coord-scatter plot window
-(`scripts/fig4_5_LTR10_CRISPR_comparison/plot_variant_coord_scatter.py --window-mb 10`), so every CRISPR-sig
-"escaped" gene that's relevant to Fig 4 supp panels has a row here.
-
-Scope is restricted to protein_coding genes throughout, with an explicit
-allowlist override for legacy / unsymbolized loci where the protein-coding
-filter would discard a real AG↔CRISPR match. Currently the allowlist contains
-just ENSG00000248112 (legacy symbol AC108174.1, a lncRNA ~120 kb upstream of
-LTR10.XRCC4 that AG predicts at raw_score=-1.60 and CRISPR validates at
-log2FC=-3.09). The Ivancevic 2024 CRISPRi DESeq2 tables use the legacy
-symbol; an alias map (AC108174.1 -> ENSG00000248112) normalises the join.
-
-The control deletion (`control_deletion_near_ATG12`) was not CRISPR-tested in
-Ivancevic 2024, so its rows are all AG-only by construction.
-
-Inputs:
-  --variants        data/LTR10_variants.tab (ID/CHROM/POS/REF/ALT/...)
-  --rna-dir         results/AG_LFC_LTR10_CRISPR/  (per-variant AG RNA CSVs)
-  --chromatin-dir   results/AG_chromatin_LTR10_CRISPR/  (per-variant chromatin)
-  --crispr-dir      Ivancevic_SciAdv2024/CRISPRi_results/ (Tables S15-S20 xlsx)
-  --gencode         data/gencode.v46.annotation.feather (TSS lookup)
-  --cell-line       HCT116 (file suffix; retained as a column)
-
-Per-row columns:
-  variant_id, chrom, pos, SVLEN, type, target_gene, study_id, cell_line,
-  gene_name, gene_id, gene_type, gene_strand, gene_TSS,
-  crispr_log2FoldChange, crispr_padj, crispr_distance_kb, notes,
-  AG_RNA_raw_score, AG_RNA_quantile_score,
-  AG_ATAC_raw_score, AG_ATAC_quantile_score,
-  AG_H3K27ac_raw_score, AG_H3K27ac_quantile_score,
-  AG_H3K4me1_raw_score, AG_H3K4me1_quantile_score
-
-RNA convention: mean of stranded RNA-seq tracks only (track_strand in {+,-});
-unstranded polyA dropped. Matches Supp Tables 4/5/7/8.
-
-Per-variant identity columns (variant_id, chrom, pos, SVLEN, type, target_gene,
-study_id, cell_line) and the four chromatin columns hold their literal values
-only on the first row of each variant block; subsequent rows leave those cells
-blank.
-
-Usage:
-    python scripts/generate_supp_tables/build_supp_table10_LTR10_CRISPR_AG_predictions.py \\
-        --variants      data/LTR10_variants.tab \\
-        --rna-dir       results/AG_LFC_LTR10_CRISPR \\
-        --chromatin-dir results/AG_chromatin_LTR10_CRISPR \\
-        --crispr-dir    Ivancevic_SciAdv2024/CRISPRi_results \\
-        --gencode       data/gencode.v46.annotation.feather \\
-        --cell-line     HCT116 \\
-        --tsv           supptables/supp_table_10_LTR10_CRISPR_AG_predictions.tsv
+Example usage:
+python scripts/generate_supp_tables/build_supp_table10_LTR10_CRISPR_AG_predictions.py \
+    --variants      data/LTR10_variants.tab \
+    --rna-dir       results/AG_LFC_LTR10_CRISPR \
+    --chromatin-dir results/AG_chromatin_LTR10_CRISPR \
+    --crispr-dir    Ivancevic_SciAdv2024/CRISPRi_results \
+    --gencode       data/gencode.v46.annotation.feather \
+    --cell-line     HCT116 \
+    --tsv           supptables/supp_table_10_LTR10_CRISPR_AG_predictions.tsv
 """
 import argparse
 from pathlib import Path

@@ -1,26 +1,13 @@
 """
-Recolour the AlphaGenome-SDK genome-browser screenshot tracks in-place by
-editing each track image's indexed palette.
+Recolour AlphaGenome-SDK genome-browser track images in a PDF by editing each
+track image's indexed palette (geometry/axes/labels untouched). Two PDF layouts
+are auto-detected: old matplotlib (/Im0../Im6, shared palette stream; 7-track
+HCT116 poster shot) and new (/I1../I9, per-image palette; 9-track Fig 5 shot).
 
-The AG SDK renders each track as a 2-colour indexed-palette image (white +
-one fill colour). Each image lives as a separate XObject in the page
-resources. Changing each image's palette swaps the track colour without
-touching geometry, axes, labels, or anything else.
-
-Two PDF formats are supported:
-
-  Old (matplotlib ≤ ~3.8): XObjects named /Im0../Im6, palette stored as a
-  shared indirect /Stream (Im0+Im1+Im3 may all reference one stream).
-  Mapping for the 7-track HCT116-only browser shot used in the CSHL poster.
-
-  New (matplotlib ≥ ~3.9): XObjects named /I1../I9, palette stored as an
-  inline pikepdf.String per image (no sharing). Mapping for the 9-track
-  HCT116 + transverse-colon + sigmoid-colon browser shots used in Fig 5.
-
-Usage:
-    python scripts/fig4_5_LTR10_CRISPR_comparison/recolor_AG_screenshot_tracks.py \\
-        --input  figures/FIG5_FINAL/browser_shots/raw/LTR10.ATG12_browser.pdf \\
-        --output figures/FIG5_FINAL/browser_shots/LTR10.ATG12_browser.pdf
+Example usage:
+python scripts/fig4_5_LTR10_CRISPR_comparison/recolor_AG_screenshot_tracks.py \
+    --input  figures/FIG5_FINAL/browser_shots/raw/LTR10.ATG12_browser.pdf \
+    --output figures/FIG5_FINAL/browser_shots/LTR10.ATG12_browser.pdf
 """
 import argparse
 from pathlib import Path
@@ -36,10 +23,8 @@ ORANGE    = (0xF0, 0x8C, 0x2D)  # H3K4me1
 DARKGREEN = (0x1A, 0x5F, 0x2A)  # ATAC
 PURPLE    = (0x7A, 0x33, 0x70)  # RNA (both strands)
 
-# 9-track stack (Fig 4/Fig 5). All HCT116 tracks first; "Normal colon
-# (sigmoid)" group at the bottom. Locked palette preserved; sigmoid
-# tracks reuse the same assay colour as their HCT116 counterpart so the
-# cancer-vs-healthy contrast reads at a glance.
+# 9-track stack (Fig 4/5): HCT116 tracks then sigmoid colon; sigmoid reuses each
+# assay's HCT116 colour so the cancer-vs-healthy contrast reads at a glance.
 TRACK_COLOURS_NEW = {
     'I1': STEELBLUE,  # HCT116 JUND
     'I2': NAVY,       # HCT116 FOSL1
@@ -114,12 +99,8 @@ def main():
         recolour_indexed_image(pdf, xobjs[key], rgb)
         print(f'  {img_name} -> rgb({rgb[0]},{rgb[1]},{rgb[2]}) = #{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}')
 
-    # Strip Illustrator's private artwork cache (PieceInfo et al). If the
-    # PDF was saved from Illustrator, it embeds the editable AI-native
-    # artwork as private data inside /PieceInfo. Illustrator reads that
-    # cache and ignores our public PDF colour edits — Preview shows the
-    # new colours, Illustrator shows the old. Removing the cache forces
-    # Illustrator to reopen the PDF using the public page content.
+    # Strip Illustrator's private /PieceInfo artwork cache, else Illustrator shows the
+    # old colours from its cache instead of our public PDF colour edits.
     illustrator_cache_keys = ['/PieceInfo', '/LastModified', '/Thumb']
     for key in illustrator_cache_keys:
         if key in page:

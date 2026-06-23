@@ -1,24 +1,13 @@
 """
-Fig 6 Panel B — TF substitution specificity at LTR10.ATG12.
+Fig 6 Panel B — TF substitution specificity at LTR10.ATG12. Grouped bar chart of
+AG-predicted H3K27ac + FOSL1 across WT, scram20 (all AP1 scrambled), and the four
+TF substitutions (TP53/CTCF/GATA1/HNF1A). Tests whether the predicted output is
+AP1-specific: if so, all substitutions collapse to scram20 levels.
 
-Bar plot comparing AG-predicted H3K27ac + FOSL1 signal across 6 alleles:
-  WT (REF prediction), scram20 (all AP1 motifs scrambled), and the four
-  TF substitutions (TP53, CTCF, GATA1, HNF1A — all 20 AP1 motifs replaced
-  with the corresponding TF's canonical 7-bp consensus core).
-
-Question answered: is the predicted regulatory output AP1-specific, or
-does any strong TF binder give equivalent activity?
-
-If AP1-specific: all TF substitutions cluster near scram20 (≈ zero signal).
-If TF-generic: TF substitutions should approach WT-level signal.
-
-Data source:
-  results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element.csv
-
-Usage:
-    python scripts/fig6_AP1_perturbation/plot_fig6_panelB_TF_specificity.py \\
-        --chromatin-csv results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element.csv \\
-        --output figures/FIG6_FINAL/panelB_TF_specificity.pdf
+Example usage:
+python scripts/fig6_AP1_perturbation/plot_fig6_panelB_TF_specificity.py \
+    --chromatin-csv results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element.csv \
+    --output figures/FIG6_FINAL/panelB_TF_specificity.pdf
 """
 import argparse
 from pathlib import Path
@@ -43,9 +32,8 @@ df['mark'] = np.where(is_track(df['track_name'], 'H3K27ac'), 'H3K27ac',
               np.where(is_track(df['track_name'], 'FOSL1'),   'FOSL1', '?'))
 ag = df.pivot_table(index='variant_id', columns='mark', values='signal_mean_ALT', aggfunc='mean')
 
-# Include WT as a row (uses REF prediction from any allele — identical across).
-# Use dict assignment so column-name alignment is explicit (the pivot orders
-# columns alphabetically, so positional list assignment would silently swap).
+# Include WT as a row (REF prediction, identical across alleles). Dict assignment
+# keeps column-name alignment explicit (the pivot orders columns alphabetically).
 wt_h3k = df[df['mark']=='H3K27ac']['signal_mean_REF'].mean()
 wt_fosl1 = df[df['mark']=='FOSL1']['signal_mean_REF'].mean()
 ag.loc['WT', 'H3K27ac'] = wt_h3k

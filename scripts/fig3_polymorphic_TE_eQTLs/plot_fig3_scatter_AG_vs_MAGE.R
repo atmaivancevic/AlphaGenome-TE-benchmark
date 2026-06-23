@@ -1,22 +1,13 @@
 #!/usr/bin/env Rscript
 #
-# scripts/fig3_polymorphic_TE_eQTLs/plot_fig3_scatter_AG_vs_MAGE.R
+# Fig 3 AG-predicted vs MAGE-observed effect-size scatter (Avsec 2026 Fig 4d).
+# --mode top_gene reads Supp 4 (one row per variant, top cis-gene); --mode
+# all_pairs reads Supp 5 (one row per (variant, gene) cis pair). Reports signed
+# Spearman/Pearson (direction) and unsigned (magnitude) of (beta_MAGE, AG raw).
 #
-# Fig 3 Panel D — AG-predicted vs MAGE-observed effect size (Avsec 2026
-# Fig 4d precedent). Two modes:
-#   --mode top_gene  → Supp 4 (1 row per variant; top MAGE cis-gene)
-#   --mode all_pairs → Supp 5 (1 row per (variant, gene) pair in cis)
-#
-# Stats reported (4):
-#   - Spearman rho (signed)   on (beta_MAGE, AG_RNA_raw_score)
-#   - Spearman rho (unsigned) on (|beta_MAGE|, |AG_RNA_raw_score|)
-#   - Pearson r   (signed)
-#   - Pearson r   (unsigned)
-# Signed = does AG predict effect direction? Unsigned = does AG predict
-# effect magnitude?
-#
-# Outputs go to figures/FIG3_FINAL{,_DEL}/panel{D,H}_*.pdf / *.tsv (8-panel
-# Fig 3: A-D for INS, E-H for DEL; D and H are the AG-vs-MAGE scatter panels)
+# Example usage:
+# Rscript scripts/fig3_polymorphic_TE_eQTLs/plot_fig3_scatter_AG_vs_MAGE.R --mode top_gene
+# Rscript scripts/fig3_polymorphic_TE_eQTLs/plot_fig3_scatter_AG_vs_MAGE.R --mode all_pairs --variant_class DEL
 
 suppressPackageStartupMessages({
   library(optparse); library(dplyr); library(readr); library(ggplot2)
@@ -57,16 +48,12 @@ if (is.null(opt$supp5)) opt$supp5 <- if (opt$variant_class == "INS") {
     "supptables/supp_table_8_all_variant_gene_pairs_DEL.tsv"
   }
 
-# Family palette. Alu = grey because it's 84% of points and functions as
-# visual "background"; saturated colours for the rare families (L1 purple,
-# SVA green, LTR5_Hs blue) so they pop. The Alu colour matches the bulk
-# Alu boxplot fill so the two panels are visually consistent.
+# Family palette: Alu grey (84% of points, visual background); saturated colours
+# for rare families (L1 purple, SVA green, LTR5_Hs blue). Matches the boxplot fills.
 fam_palette <- c(Alu = "#888888", L1 = "#7E6BBF", SVA = "#5BA75A", LTR5_Hs = "#3A7CA5")
 
-# Locked exemplars to highlight + label.
-# INS exemplars are the 3 Fig 3 A/B/C boxplot variants + the Fig 2 HLA-DQA2
-# exemplar. DEL exemplars are the 3 Fig 3 D/E/F boxplot variants, picked
-# 2026-05-12 from Panel H's q-significant outlier candidates.
+# Locked exemplars to highlight/label: INS = the 3 Fig 3 boxplot variants + the
+# Fig 2 HLA-DQA2 exemplar; DEL = the 3 Fig 3 DEL boxplot variants.
 locked_INS <- tribble(
   ~variant_id,        ~gene_symbol,  ~exemplar_label,
   "SvimAsm00107100",  "HSD17B12",    "Alu : HSD17B12",
@@ -86,12 +73,9 @@ if (!is.null(opt$exemplars)) {
   locked <- locked %>% filter(variant_id %in% keep_ids)
 }
 
-# Mode-specific input + column naming. Panel letters per locked 8-panel
-# Fig 3 layout (2026-05-12): A/B/C = INS boxplots; D/E/F = DEL boxplots;
-# G = INS scatter; H = DEL scatter. The two scatters sit side-by-side at
-# the bottom of the figure for direct visual comparison.
-# INS and DEL outputs go to the SAME dirs (FIG3_FINAL, SUPP_FOR_FIG3);
-# filenames disambiguate via panel letter.
+# Mode-specific input + columns. Panel letters (locked 8-panel Fig 3): A/B/C INS
+# boxplots, D/E/F DEL boxplots, G/H the two scatters. INS+DEL share output dirs;
+# filenames disambiguate by panel letter.
 vtype_word   <- if (opt$variant_class == "INS") "TE insertions" else "TE deletions"
 panel_letter <- if (opt$variant_class == "INS") "A"             else "B"
 if (opt$mode == "top_gene") {
@@ -121,9 +105,8 @@ cat(sprintf("After NA filter (beta_MAGE × AG_RNA_raw_score both non-NA): %d\n",
 cat(sprintf("Dropped: %d\n", n_input - n_plotted))
 cat("Per-family counts:\n"); print(table(df$family))
 
-# Four headline correlations + p-values (vs H0: cor = 0). cor.test() with
-# method="spearman" warns about ties; exact=FALSE switches to the asymptotic
-# normal approximation (appropriate at n≫30 anyway) and silences the warning.
+# Four headline correlations + p (H0: cor=0). exact=FALSE uses the asymptotic
+# approximation (fine at n>>30) and silences the ties warning.
 ctest <- function(x, y, method) {
   suppressWarnings(cor.test(x, y, method = method, exact = FALSE))
 }
@@ -157,12 +140,8 @@ stats_df <- tibble(
 write_tsv(stats_df, out_stats)
 cat(sprintf("\nWrote stats: %s\n", out_stats))
 
-# Exemplars (always match Supp 4's top-gene definitions). LTR5_Hs /
-# HLA-DQA2 gets its label handled by a dedicated geom_text_repel layer
-# below (no leader line, hugged close above the point); the other three
-# use default repel behaviour.
-# Empty `locked` is allowed (DEL exemplars not yet picked) — the scatter
-# just renders without highlighted points + labels in that case.
+# Exemplars match Supp 4's top-gene definitions; LTR5_Hs/HLA-DQA2 gets a dedicated
+# repel label below. Empty locked set is allowed (renders without highlights).
 if (nrow(locked) > 0) {
   hl <- df %>% inner_join(locked, by = c("variant_id", "gene_symbol"))
   cat(sprintf("Highlighted exemplars matched: %d / %d\n", nrow(hl), nrow(locked)))
@@ -171,12 +150,8 @@ if (nrow(locked) > 0) {
   cat("No locked exemplars defined for this variant_class — rendering scatter without highlights.\n")
 }
 
-# Z-order: Alu (grey background family) drawn at the bottom, then the
-# rare families (L1 / SVA / LTR5_Hs) shuffled together on top. With
-# Alu = 84% of points, a pure random shuffle would bury most rare-family
-# points under grey; layering rare-on-top makes every L1/SVA/LTR5_Hs
-# point visible while the dense Alu cloud is still clearly the bulk.
-# Within each band the shuffle is fixed by seed for reproducibility.
+# Z-order: Alu (grey, 84%) at the bottom, rare families (L1/SVA/LTR5_Hs) shuffled
+# on top so they stay visible above the dense Alu cloud. Shuffle seeded.
 set.seed(20260511)
 df <- bind_rows(
   df %>% filter(family == "Alu")  %>% slice_sample(prop = 1),
@@ -189,10 +164,8 @@ fam_legend_labels <- sprintf("%s (n=%d)", names(fam_palette),
                              as.integer(fam_counts[names(fam_palette)]))
 names(fam_legend_labels) <- names(fam_palette)
 
-# Stat-annotation labels (computed outside the ggplot+ chain so we don't
-# accidentally hit R's parser interpretation of `+ ALPHA <- 0.05` as the
-# nonexistent `+<-` operator). Keep ρ/r to 2 dp; replace p-value with
-# "(ns)" when p > 0.05 to reduce visual clutter — full p in the stats TSV.
+# Stat labels built outside the ggplot chain (avoids an R parser quirk). rho/r to
+# 2 dp; p>0.05 shown as "(ns)" to cut clutter (full p in the stats TSV).
 ALPHA <- 0.05
 fmt_p <- function(p) if (p < ALPHA) sprintf("'p =' ~ '%.2g'", p) else "'(ns)'"
 rho_lbl <- sprintf("rho == %0.2f ~ %s",
@@ -200,9 +173,8 @@ rho_lbl <- sprintf("rho == %0.2f ~ %s",
 r_lbl   <- sprintf("italic(r) == %0.2f ~ %s",
                    stats$pearson_r_signed,    fmt_p(pvals$pearson_r_signed_p))
 
-# Typography — Fig 3 paper-figure defaults.
-# Tuned for 220 × 220 pt panels: 10 pt axis titles + 9 pt ticks readable,
-# legend kept at 7 pt so it fits inside the plot without crowding the points.
+# Typography — Fig 3 paper-figure defaults (220 x 220 pt panels: 10 pt axis
+# titles, 9 pt ticks, 7 pt legend).
 PLOT_FONT    <- "Helvetica"
 FS_BASE      <- 10
 FS_TITLE     <- 11

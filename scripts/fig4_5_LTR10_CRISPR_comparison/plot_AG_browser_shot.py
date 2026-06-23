@@ -1,31 +1,16 @@
 """
-Generate an AlphaGenome SDK genome-browser-style PDF for one LTR10 enhancer.
+AlphaGenome SDK genome-browser-style PDF for one LTR10 enhancer. Stacks HCT116
+tracks (JUND, FOSL1, H3K27ac, H3K4me1, ATAC, total RNA +/- strand) then a normal
+sigmoid-colon group (H3K27ac, H3K4me1); the - strand RNA axis is inverted so peaks
+point down. The enhancer span (Supp 10 pos + SVLEN) is highlighted in orange. Output
+uses default AG track colours; pipe through recolor_AG_screenshot_tracks.py for the
+locked assay palette.
 
-Stacks tracks in this order (all HCT116 first; "Normal colon (sigmoid)"
-group at the bottom — matches Atma's inspo layout):
-  HCT116 group (per-track label = assay name only, no biosample prefix):
-    JUND
-    FOSL1
-    H3K27ac
-    H3K4me1
-    ATAC-seq
-    total RNA-seq + strand
-    total RNA-seq − strand (axis INVERTED so peaks point DOWN,
-                            butted against + strand at the 0-line)
-  Normal colon (sigmoid) group:
-    H3K27ac
-    H3K4me1
-
-The enhancer span (from supp 10 'pos' + 'SVLEN') is highlighted with two
-orange vertical bars via VariantAnnotation. The resulting PDF still uses
-the default AG SDK track colours; pipe through
-scripts/fig4_5_LTR10_CRISPR_comparison/recolor_AG_screenshot_tracks.py to apply the locked assay palette.
-
-Usage:
-  python scripts/fig4_5_LTR10_CRISPR_comparison/plot_AG_browser_shot.py \
-      --variant-id LTR10.ATG12 \
-      --coords chr5:115820000-115940000 \
-      --output figures/FIG5_FINAL/browser_shots/raw/LTR10.ATG12_browser.pdf
+Example usage:
+python scripts/fig4_5_LTR10_CRISPR_comparison/plot_AG_browser_shot.py \
+    --variant-id LTR10.ATG12 \
+    --coords chr5:115820000-115940000 \
+    --output figures/FIG5_FINAL/browser_shots/raw/LTR10.ATG12_browser.pdf
 """
 
 import os, sys, argparse, re
@@ -34,11 +19,7 @@ import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-# Helvetica across all text — title, axis labels, ticklabels, the
-# variant-id label drawn after plot. NOTE: Mac's bundled Helvetica.ttc
-# only exposes the regular weight to matplotlib (no bold variant), so
-# bold-requested text falls back to Arial Bold which is a near-identical
-# substitute and DOES have a proper bold weight available.
+# Helvetica throughout; bold falls back to Arial Bold (Mac Helvetica.ttc exposes no bold).
 mpl.rcParams['font.family']     = 'sans-serif'
 mpl.rcParams['font.sans-serif'] = ['Helvetica', 'Arial', 'DejaVu Sans']
 mpl.rcParams['pdf.fonttype']    = 42
@@ -172,15 +153,8 @@ def pick(td, label, **filters):
                  f'{sorted(set(meta[list(filters)[0]].astype(str)))[:30]}')
     return td.select_tracks_by_index(keep)
 
-# Strip the "EFO:NNNNNN " / "UBERON:NNNNNN " prefix from the track
-# 'name' metadata so the y-axis label reads e.g. "TF ChIP-seq JUND"
-# instead of "EFO:0002824 TF ChIP-seq JUND". Compact labels let the
-# figure adopt a flatter aspect ratio. Ontology IDs used in this
-# script (recorded for provenance — these are the AG SDK queries):
-#
-#   EFO:0002824   HCT116 (colorectal carcinoma cell line)
-#   UBERON:0001159 sigmoid colon (healthy normal-tissue reference)
-#
+# Strip the "EFO:NNN " / "UBERON:NNN " prefix from track names for compact y-labels.
+# Ontologies: EFO:0002824 HCT116, UBERON:0001159 sigmoid colon.
 def strip_ontology_prefix(td):
     md = td.metadata.copy()
     if 'name' in md.columns:
@@ -233,12 +207,8 @@ hct_rna   = _hct(pick(baseline.rna_seq,      'HCT116 total RNA',
 sig_27ac  = _sig(pick(baseline.chip_histone, 'sigmoid H3K27ac', ontology_curie=sig, histone_mark='H3K27ac'))
 sig_4me1  = _sig(pick(baseline.chip_histone, 'sigmoid H3K4me1', ontology_curie=sig, histone_mark='H3K4me1'))
 
-# Split stranded total-RNA into two single-track TrackDatas. Each gets
-# its own panel with its own y-axis range — the small minus-strand
-# signal stays visible at its own scale (vs the mirror approach which
-# crushed it under the larger plus-strand range). The minus-strand
-# panel is then post-rendered with an inverted y-axis so peaks point
-# DOWN — standard genome-browser convention for stranded RNA.
+# Split stranded total-RNA into two single-track panels, each with its own y-axis
+# (keeps the small - strand visible); the - strand panel is then inverted (peaks down).
 strands = hct_rna.metadata['strand'].astype(str).values
 plus_idx  = list(np.where(strands == '+')[0])
 minus_idx = list(np.where(strands == '-')[0])

@@ -1,6 +1,10 @@
-#!/usr/bin/env bash
-# Download ENCODE H3K27ac narrowPeak BEDs found by
-# scripts/resolve_encode_h3k27ac_peaks.sh, and verify md5sums.
+#!/bin/bash
+
+## Download the ENCODE H3K27ac narrowPeaks resolved by
+## resolve_encode_h3k27ac_peaks.sh, and verify md5sums.
+##
+## Example usage:
+## bash scripts/fig1_baseline_chromatin/fetch_encode_h3k27ac_peaks.sh
 set -euo pipefail
 
 RES="${1:-data/encode_h3k27ac/peak_resolution_human.tsv}"
