@@ -25,7 +25,7 @@ AlphaGenome-TE-benchmark/
     └── generate_supp_tables/           # supp table builder scripts 
 ```
 
-Large external data (ENCODE peaks/bigWigs, the Schloissnig BCFs, RNA-seq matrices) can be downloaded via the commands in each section above. Run all scripts from the repository root.
+Large external data (ENCODE peaks/bigWigs, the Schloissnig BCFs, RNA-seq matrices) can be downloaded via the commands in each section below. Run all scripts from the repository root.
 
 ## Programs used and dependencies
 
