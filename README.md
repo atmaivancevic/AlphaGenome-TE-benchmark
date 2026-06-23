@@ -1,2 +1,1053 @@
 # AlphaGenome-TE-benchmark
-Benchmarking AlphaGenome's regulatory predictions against TE-derived enhancers and polymorphic insertions/deletions.
+
+## Overview
+
+Sequence-to-function (S2F) models like AlphaGenome and Borzoi predict regulatory activity directly from DNA sequence, but their behaviour on transposable element (TE)-derived regulatory regions is largely untested. This repository benchmarks AlphaGenome against TE-derived regulatory elements across four paradigms: genome-wide H3K27ac prediction across ENCODE biosamples, a polymorphic-TE insertion example, polymorphic-TE cis-eQTLs in lymphoblastoid cohorts, and CRISPR-validated LTR10 enhancers. Each section below maps to a main or supplementary figure and gives the exact commands to reproduce every derived file from public inputs.
+
+This repository contains **code only** (see [Repository structure](#repository-structure)). Scripts are organised by figure under `scripts/` (`fig1_baseline_chromatin/`, `fig2_polymorphic_TE_example/`, `fig3_polymorphic_TE_eQTLs/`, `fig4_5_LTR10_CRISPR_comparison/`, `fig6_AP1_perturbation/`, `generate_supp_tables/`). `scripts/wip/` holds exploratory/superseded work and is **not** part of the published pipeline.
+
+## Software
+
+Developed on **macOS (Apple Silicon)**. The GIGGLE enrichment and the bulk ENCODE/ENA downloads were run on a **Linux HPC** (CU Boulder Fiji); those steps are noted inline. Shell scripts assume a Unix environment — a couple use macOS-specific tools (`gzcat`, Lmod `module load`); swap in `gzip -dc` / a conda env on plain Linux.
+
+**Python 3.11** — all packages pinned in `requirements.txt`. Key versions: `alphagenome` 0.6.1, `numpy` 2.4.4, `pandas` 2.3.3, `scipy` 1.17.1, `matplotlib` 3.10.8, `seaborn` 0.13.2, `plotly` 6.7.0 + `kaleido` 1.2.0 (figure export), `pyBigWig` 0.3.25 (bigWig tracks), `pyarrow` 23.0.1.
+
+**R 4.6.0** — install via `Rscript scripts/install_R_deps.R`. Packages: MatrixEQTL, matrixStats, R.utils, optparse, data.table, dplyr, readr, ggplot2, ggrepel, ggtext, patchwork, cowplot, tidyr, tibble.
+
+**Command-line tools:** `bcftools` 1.23.1 (read BCFs; `brew install bcftools`), `bedtools` 2.31.1 (peak merging), `samtools` / `bgzip` from htslib (GIGGLE prep), [GIGGLE](https://github.com/ryanlayer/giggle) (Layer et al. 2018; TE-family enrichment), and LaTeX (MacTeX-no-gui; `brew install --cask mactex-no-gui`) for the Supplementary PDF.
+
+An AlphaGenome API key is required for every prediction/scoring script. Copy the template and paste your key:
+
+```bash
+cp scripts/my_api_key.txt.example scripts/my_api_key.txt   # then edit in your key
+```
+
+The key file is gitignored and never committed. Run all scripts from the repo root.
+
+## Setup
+
+```bash
+# Create virtual environment and install dependencies
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+Rscript scripts/install_R_deps.R   # R packages (eQTL + figures)
+```
+
+## Fig 1 — Genome-wide AG H3K27ac prediction across ENCODE biosamples
+
+Compares AlphaGenome-predicted H3K27ac signal against ENCODE-called experimental peak signal at each peak. We use the full set of 159 human H3K27ac × ENCODE training tracks from Avsec et al. (2026) Supplementary Table 2, regardless of `audit_flag_priority` (23 PASS, 110 WARNING, 21 NOT_COMPLIANT, 5 ERROR) — the NOT_COMPLIANT/ERROR flags are metadata-driven and exclude several biosamples critical to this paper (GM12878, HepG2, K562, MCF-7, IMR-90, A673). **Predicted peak signal was defined as the maximum AlphaGenome H3K27ac value across bins overlapping each experimental peak, analogous to summit-centric peak scoring in MACS2.** For each peak the 1 Mb AG context window is centered on the peak midpoint and predictions are cached per-window (subsequent peaks within an already-predicted window reuse the cached track).
+
+The biosample × ENCODE-peak-file manifest (with `peak_ENCFF`, `ENCODE4 GRCh38 pipeline_version`, and `md5sum` per biosample) is `supptables/supp_table_1_encode_h3k27ac_tracks.tsv`, built by `scripts/generate_supp_tables/build_supp_table1_encode_h3k27ac_tracks.py`. Empty `frip` values reflect cases where the upstream ENCODE pipeline did not report frip for that experiment (carried forward verbatim from Avsec et al. 2026 Supp Table 2).
+
+### Build the peak manifest + download + merge
+
+```bash
+# (1) Resolve each AG-training bigWig to its matching ENCODE default narrowPeak.
+# Walks all 159 human H3K27ac tracks in data/AG_training_H3K27ac_tracks.csv,
+# queries ENCODE for each, writes data/encode_h3k27ac/peak_resolution_human.tsv.
+bash scripts/fig1_baseline_chromatin/resolve_encode_h3k27ac_peaks.sh data/AG_training_H3K27ac_tracks.csv
+
+# (2) Download every resolved peak file; verify against ENCODE-reported md5sums.
+bash scripts/fig1_baseline_chromatin/fetch_encode_h3k27ac_peaks.sh
+
+# (3) Merge multi-experiment biosamples (39 of 159) via bedtools merge with
+# averaged score columns; pass through single-experiment biosamples (120 of
+# 159) with a numeric (chrom, start) sort applied. Writes one merged
+# narrowPeak per biosample to data/encode_h3k27ac/peaks/merged/.
+# (Internally calls the helper scripts/fig1_baseline_chromatin/group_peaks_by_biosample.py
+#  to map each biosample to its per-experiment peak files.)
+bash scripts/fig1_baseline_chromatin/merge_encode_h3k27ac_peaks.sh
+
+# (4) Build Supp Table 1 (TSV). Now also writes the ENCODE @@download URLs
+# for both the bigWig and the matched narrowPeak (`bigwig_URL`, `peak_URL`)
+# alongside their accession columns, so a reader can click through without
+# knowing the URL pattern.
+python scripts/generate_supp_tables/build_supp_table1_encode_h3k27ac_tracks.py
+
+# (5) Fetch a per-biosample fold-change bigWig (the actual signal AG trained
+# on) for any biosample we want to draw browser tracks for. Bigwigs are
+# 100 MB - 2 GB each, so we fetch only what we need (gitignored). The
+# fetcher pulls expected md5 from ENCODE's REST API and verifies.
+bash scripts/fig1_baseline_chromatin/fetch_encode_h3k27ac_bigwigs.sh \
+  ENCFF169MCH  ENCFF469WVA          # HCT116, GM12878 — for Fig 1 Panel B/C
+# Output: data/encode_h3k27ac/bigwigs/human/<ENCSR>_<ENCFF>.bigWig
+```
+
+### GIGGLE TE-family enrichment per biosample (bubble plot)
+
+For each of the 159 biosamples, GIGGLE (Layer et al. 2018) is queried against the hg38 RepeatMasker index for every TE family. Output: a combo-score-ranked table of biosample × TE-family enrichments, plus per-biosample TSVs.
+
+GIGGLE itself runs on a server with the indexed repeat database (we use CU Boulder's Fiji HPC; the index lives at `/Shares/CL_Shared/db/giggle/hg38/repeats/indexed`). To re-run from scratch:
+
+```bash
+# (On Fiji) — runs GIGGLE on all 159 merged peak files, writes per-biosample
+# .bed.VSrepeats.tab tables + combined h3k27ac_vs_TEs_rankedByScore.tab.
+bash scripts/fig1_baseline_chromatin/giggle_enrichment.sh \
+    data/encode_h3k27ac/peaks/merged \
+    results/giggle_h3k27ac \
+    /Shares/CL_Shared/db/giggle/hg38/repeats/indexed
+```
+
+```bash
+# (Local) — pull results back and re-render the bubble plot.
+rsync -avz fiji:/scratch/Users/%u/data/2026/9_AlphaGenome/results/giggle_h3k27ac/*.bed.VSrepeats.tab \
+    data/encode_h3k27ac/giggle_results/per_sample/
+rsync -avz fiji:/scratch/Users/%u/data/2026/9_AlphaGenome/results/giggle_h3k27ac/h3k27ac_vs_TEs_rankedByScore.tab \
+    data/encode_h3k27ac/giggle_results/
+
+python scripts/fig1_baseline_chromatin/plot_giggle_bubbles.py --top-TEs 25 --top-biosamples 40 \
+  --outdir suppfigures/s2
+# Writes suppfigures/s2/fig1_giggle_bubbles_top25_bs40.pdf  (Supplementary Figure S2)
+
+# Curated 8 × 8 mini-bubble for Fig 1 Panel D (lineage-spanning subset with
+# well-anchored TE-family stories; full 159×TE supp is the --top-biosamples
+# 40 variant above). --render-scale 2 dodges the kaleido small-figure export
+# bug (Error 525) — the PDF is rendered at 2x the 290x200 pt design size and
+# is placed at 50% in Illustrator. --size-max 14 keeps the big bubbles from
+# overlapping; --outdir writes straight into FIG1_FINAL.
+python scripts/fig1_baseline_chromatin/plot_giggle_bubbles.py \
+  --keep-biosamples "HCT116,GM12878,K562,OCI-LY3,H1,HUES6,placenta,PC-9" \
+  --keep-TEs        "LTR10A,LTR10F,LTR2B,LTR7,LTR5_Hs,MER41B,MER11D,LTR8" \
+  --width 290 --height 200 --render-scale 2 --size-max 14 \
+  --outdir figures/FIG1_FINAL/Fig1D_giggle_plot \
+  --suffix "_fig1mini_8x8_260x200pt_2x"
+# Writes figures/FIG1_FINAL/Fig1D_giggle_plot/fig1_giggle_bubbles_fig1mini_8x8_260x200pt_2x.pdf
+```
+
+**Subsetted GIGGLE result tables** (to upload alongside the figures):
+
+- `data/encode_h3k27ac/giggle_results/h3k27ac_vs_TEs_rankedByScore_supp_25TEs_40bs.tsv` — 1,000 rows backing the supp figure (25 TEs × 40 biosamples). Includes all per-cell statistics (gigglescore, oddsratio, overlaps) for both enriched and depleted associations.
+- `data/encode_h3k27ac/giggle_results/h3k27ac_vs_TEs_rankedByScore_fig1main_8x8.tsv` — 64 rows backing the main-figure mini-panel (8 TEs × 8 biosamples). Same schema.
+
+> **Input requirement.** Peak files must be numerically sorted by `(chrom, start)` — ENCODE distributes narrowPeaks lex-sorted on POS, which silently collapses the 1Mb cache hit rate. The merge script (`scripts/fig1_baseline_chromatin/merge_encode_h3k27ac_peaks.sh`) numerically sorts both merged (multi-experiment) and copied (single-experiment) outputs. The prediction script (`scripts/fig1_baseline_chromatin/predict_peak_signal_batched.py`) verifies sort order at load time and raises `ValueError` if any chromosome is out of order. For any new peak file added by hand:
+> ```bash
+> gzcat path/to/file.narrowPeak.gz | sort -k1,1 -k2,2n | gzip > path/to/file.sorted.narrowPeak.gz
+> mv path/to/file.sorted.narrowPeak.gz path/to/file.narrowPeak.gz
+> ```
+
+```bash
+# Per biosample: predict AG H3K27ac at every experimental peak
+source venv/bin/activate
+python scripts/fig1_baseline_chromatin/predict_peak_signal_batched.py \
+  --regions  data/encode_h3k27ac/peaks/merged/<EFO_NNN_LABEL>.narrowPeak.gz \
+  --ontology <EFO:NNN> \
+  --label    <EFO_NNN_LABEL> \
+  --outdir   results/AG_predicted_h3k27ac_batched
+
+# Render the AG-vs-experimental scatter (Pearson r + Spearman ρ).
+# Default mode = standalone 6x6 in panel with axis titles.
+python scripts/fig1_baseline_chromatin/plot_peak_correlation.py \
+  --experimental data/encode_h3k27ac/peaks/merged/<EFO_NNN_LABEL>.narrowPeak.gz \
+  --predicted    results/AG_predicted_h3k27ac_batched/<EFO_NNN_LABEL>/<EFO_NNN_LABEL>.narrowPeak.gz \
+  --label        <LABEL> \
+  --output       figures/FIG1_FINAL/<LABEL>_exp_vs_pred.pdf
+
+# Fig 1A grid panels: --figure-mode renders a 125 pt square panel with no axis
+# titles (shared x/y labels added once in Illustrator), 10 pt bold biosample
+# title, 8 pt stats/ticks, and fixed internal margins so all 8 panels tile and
+# align. The 8 panels below compose a 4x2 grid (524 x 258 pt; 8 pt gutters).
+for pair in HCT116:EFO_0002824_HCT116 GM12878:EFO_0002784_GM12878 \
+            K562:EFO_0002067_K562 OCI-LY3:EFO_0006710_OCI-LY3 \
+            H1:EFO_0003042_H1 HUES6:EFO_0007086_HUES6 \
+            placenta:UBERON_0001987_placenta PC-9:EFO_0002847_PC-9; do
+  label="${pair%%:*}"; efo="${pair##*:}"
+  python scripts/fig1_baseline_chromatin/plot_peak_correlation.py \
+    --experimental data/encode_h3k27ac/peaks/merged/${efo}.narrowPeak.gz \
+    --predicted    results/AG_predicted_h3k27ac_batched/${efo}/${efo}.narrowPeak.gz \
+    --label "$label" --figure-mode \
+    --output figures/FIG1_FINAL/Fig1A_grid/${label}_exp_vs_pred.pdf
+done
+```
+
+### Fig 1 Panel B/C — outlier browser shots + supp table
+
+Per-peak residuals from the per-biosample linear fit are used to flag the 20 most
+visually-extreme outliers (in each direction) on each of the 8 Panel A scatters.
+Highlight-overlay PDFs (`suppfigures/s1/`) show those 40 dots per biosample in
+red (AG over-predicts) and dark blue (AG under-predicts).
+The annotated supp table records width, nearest protein-coding gene, TSS distance,
+and a promoter/proximal/distal class for every candidate. AG over-call peaks are
+2.3× enriched at promoters vs the baseline distribution of all matched H3K27ac
+peaks (binomial p = 1.5 × 10⁻¹⁷; holds in 5/8 biosamples). The mirror claim that
+under-calls cluster at distal sites is much weaker (1.25× baseline, p = 2 × 10⁻³)
+— recorded in the supp table but not promoted as a headline finding. See
+[stage3_task3.5](tasks/stage3_task3.5_AG_predicted_peaks.md) for the full sanity
+check; reproduce with `scripts/fig1_baseline_chromatin/check_panel_outlier_robustness.py`.
+
+```bash
+# 1. Rank the 320 most-extreme peaks (20 × 2 directions × 8 biosamples).
+python scripts/fig1_baseline_chromatin/find_panel_outliers.py \
+  --topn 20 \
+  --output tasks/fig1_panel_BC_outlier_candidates.tsv
+
+# 2. Re-render each Panel A scatter with the candidate dots overlaid (red/blue).
+#    Outputs go directly into suppfigures/s1/ — the supp PDF's source dir for
+#    Supp Fig 1 — so a rebuild needs no manual file shuffling. Uses the
+#    annotated supp table as the highlight source (same 320 candidates, but it
+#    also carries `nearest_gene`); plot_peak_correlation tolerates either the
+#    raw B_over/C_under or the human-readable direction strings. The two Panel
+#    B/C exemplar loci are name-labelled on their own biosample panel via
+#    --label-genes (NFKBIA on GM12878, PCDH7 on HCT116); other panels get no
+#    label even if the same gene appears (e.g. NFKBIA is also a top OCI-LY3
+#    outlier).
+declare -A LABELGENE=( [GM12878]=NFKBIA [HCT116]=PCDH7 )
+for pair in HCT116:EFO_0002824_HCT116 GM12878:EFO_0002784_GM12878 \
+            K562:EFO_0002067_K562 OCI-LY3:EFO_0006710_OCI-LY3 \
+            H1:EFO_0003042_H1 HUES6:EFO_0007086_HUES6 \
+            placenta:UBERON_0001987_placenta PC-9:EFO_0002847_PC-9; do
+  label="${pair%%:*}"; efo="${pair##*:}"
+  extra=""; [ -n "${LABELGENE[$label]:-}" ] && extra="--label-genes ${LABELGENE[$label]}"
+  python scripts/fig1_baseline_chromatin/plot_peak_correlation.py \
+    --experimental data/encode_h3k27ac/peaks/merged/${efo}.narrowPeak.gz \
+    --predicted    results/AG_predicted_h3k27ac_batched/${efo}/${efo}.narrowPeak.gz \
+    --label "$label" \
+    --highlight-tsv supptables/supp_table_fig1_BC_outliers.tsv $extra \
+    --output suppfigures/s1/${label}_exp_vs_pred_highlighted.pdf
+done
+
+# 3. Annotate every candidate with width + nearest gene + TSS distance +
+#    promoter/proximal/distal class → publication-ready supp table.
+python scripts/fig1_baseline_chromatin/annotate_panel_outliers.py \
+  --input   tasks/fig1_panel_BC_outlier_candidates.tsv \
+  --gencode data/gencode.v46.annotation.feather \
+  --output  supptables/supp_table_fig1_BC_outliers.tsv
+
+# 4. Sanity-check the headline (baseline-region distribution + binomial vs
+#    baseline + per-biosample stability + top-N sensitivity).
+python scripts/fig1_baseline_chromatin/check_panel_outlier_robustness.py \
+  --supp-table supptables/supp_table_fig1_BC_outliers.tsv
+```
+
+##### Render the Panel B/C browser shots
+
+For the chosen finalist loci, draw a 3-track browser shot: experimental
+ENCODE H3K27ac (fold-change bigWig, read with `pyBigWig`), AlphaGenome-
+predicted H3K27ac at the same biosample/locus (1 Mb AG context), and a
+GENCODE v46 protein-coding gene track (longest transcript per gene; exon
+blocks + UCSC-style repeated arrowheads along the intron line pointing 5'->3'
+— `>` for + strand, `<` for − strand). Standalone matplotlib (locked assay
+palette applied directly; no pikepdf recolor pass). Requires the fetched
+bigWigs from step (5) above and `pyBigWig` (`pip install pyBigWig`).
+
+Each track's y-axis max is fixed so track height reads as "how big is this
+peak relative to the whole cell line" — that's what makes over- vs
+under-prediction legible at a glance, rather than each track auto-scaling to
+its own window max (which hides under-prediction because both tracks then
+fill their panel). The caps start from the per-biosample genome-wide max
+`signalValue` — the same axis range as the Panel A scatter — rounded to clean
+numbers, then nudged per panel for readability (see bullets below). Raw
+cell-line maxima: GM12878 ENCODE 95.7 / AG 11,968; HCT116 ENCODE 88.0 / AG
+9,344. `--scale-to-peaks <exp> <pred>` prints those raw maxima from the
+matched narrowPeak files; the final figures pass the chosen values explicitly
+via `--exp-ymax` / `--ag-ymax`.
+
+- **Panel B (NFKBIA, over-prediction):** 80 / 11,000. The AG peak rises to
+  ~72% of AG's cell-line range while the ENCODE peak reaches only ~55% of its
+  (slightly tightened, 80) range — AG ranks this promoter higher in its own
+  distribution than ENCODE does.
+- **Panel C (PCDH7, under-prediction):** 100 / **3,000**. ENCODE stays at its
+  true cell-line max (100; super-enhancer block at ~68%, no clipping). The AG
+  cap is dropped to 3,000 (≈30% of AG's ~10,000 cell-line range) so AG's
+  smaller, patchier signal lifts off the floor and is visible (~36% at its
+  peak) — showing AG predicts scattered peaks across the super-enhancer but
+  misses its continuous block character (under-prediction reads through AG's
+  gappiness + lower height, not absence).
+
+`--width-pt` / `--height-pt` force the PDF to an exact size (here the Fig 1
+slot, 264.0439 × 176.2063 pt) via a fixed save Bbox, so the panels drop into
+the Illustrator layout at the right scale with correctly-sized fonts (without
+the fixed Bbox the mixed vector/raster renderer snaps the page to the dpi grid
+and the size drifts ~0.5 pt). In exact mode the gene track is given a taller
+ratio + wider inter-panel spacing so the gene model, the tracks above it, and
+the chromosome axis below all have breathing room. `--title` sets a short
+on-panel title (Atma swaps in the full caption-style title in Illustrator).
+The biosample name is drawn as a **bold left-aligned header above the tracks**
+(matching the Fig 4/5 LTR10 browser shots), not in the title. The AG track is
+labelled "AG H3K27ac"; min font on the panel is 7 pt. The orange peak
+highlight is one continuous vertical band spanning all three panels.
+
+```bash
+# Panel B — AG over-predicts magnitude at the NFKBIA promoter (GM12878).
+python scripts/fig1_baseline_chromatin/plot_panel_BC_browser.py \
+  --label NFKBIA --biosample GM12878 --ontology EFO:0002784 \
+  --bigwig data/encode_h3k27ac/bigwigs/human/ENCSR000AKC_ENCFF469WVA.bigWig \
+  --coords chr14:35395000-35415000 --peak 35404062-35406008 \
+  --exp-ymax 80 --ag-ymax 11000 --width-pt 264.0439 --height-pt 196.2063 \
+  --title "Over-prediction: NFKBIA promoter" \
+  --output figures/FIG1_FINAL/Fig1BC_browser/NFKBIA_GM12878.pdf
+
+# Panel C — AG under-represents the distal PCDH7 super-enhancer (HCT116, 134 kb).
+# AG cap dropped to 3000 (vs the ~10000 cell-line max) to reveal the weaker,
+# patchier distal AG signal without clipping the ENCODE super-enhancer (max ~68 < 100).
+python scripts/fig1_baseline_chromatin/plot_panel_BC_browser.py \
+  --label PCDH7 --biosample HCT116 --ontology EFO:0002824 \
+  --bigwig data/encode_h3k27ac/bigwigs/human/ENCSR000EUT_ENCFF169MCH.bigWig \
+  --coords chr4:30690000-30920000 --peak 30739840-30874140 \
+  --exp-ymax 100 --ag-ymax 3000 --width-pt 264.0439 --height-pt 196.2063 \
+  --title "Under-prediction: PCDH7 broad H3K27ac domain" \
+  --output figures/FIG1_FINAL/Fig1BC_browser/PCDH7_HCT116.pdf
+```
+
+Figure caption text for these panels (italicise the gene symbols):
+- **(B)** AG over-predicts H3K27ac at the *NFKBIA* promoter (GM12878)
+- **(C)** AG under-predicts H3K27ac at a *PCDH7* distal enhancer region (HCT116)
+
+To re-derive the raw per-biosample caps (printed, not applied) for any
+biosample, add `--scale-to-peaks <exp.narrowPeak> <pred.narrowPeak>` (the
+matched Panel A files under `data/encode_h3k27ac/peaks/merged/` and
+`results/AG_predicted_h3k27ac_batched/`).
+
+#### `supptables/supp_table_fig1_BC_outliers.tsv` — column dictionary
+
+| Column | Meaning |
+|---|---|
+| `biosample` | Cell line / tissue label (one of the 8 Panel A biosamples). |
+| `direction` | `AG over-predicts H3K27ac (red dots)` or `AG under-predicts H3K27ac (blue dots)` — i.e. which Panel B/C bucket the peak falls into. |
+| `rank_in_biosample` | 1–20 ranking within `biosample × direction`. Rank 1 = single most extreme outlier (largest absolute signed residual) in that direction for that biosample. |
+| `chrom`, `start`, `end` | Peak coordinates (hg38, 0-based BED-style — same as input narrowPeak files). |
+| `width_bp` | `end − start`. Wide peaks (≥20 kb) are stitched super-enhancer-like calls. |
+| `exp_signal` | ENCODE experimental H3K27ac peak signal (column 7 of the narrowPeak file: `signalValue`, fold-enrichment over input). X-axis on the Panel A scatter. |
+| `pred_signal` | AlphaGenome-predicted H3K27ac signal at the same coordinates. Y-axis on the Panel A scatter. Not on the same numeric scale as `exp_signal` — the per-biosample linear fit absorbs the scale difference, so use `residual_pred_signal_minus_linear_fit` for comparison, not the raw ratio. |
+| `residual_pred_signal_minus_linear_fit` | Signed residual from the per-biosample linear regression on raw signal: `pred_signal − (slope × exp_signal + intercept)`, where `slope, intercept` come from a `scipy.stats.linregress(exp_signal, pred_signal)` fit across all matched peaks in that biosample. **Positive** = AG predicted higher than the line says it should (over-prediction). **Negative** = AG predicted lower (under-prediction). Bigger absolute value = more visually extreme on the scatter. |
+| `nearest_gene` | Closest **protein-coding** gene by gene-body containment, then midpoint distance (GENCODE v46, `Feature = gene`, `gene_type = protein_coding`). If the peak overlaps a gene body, that gene is returned and `distance_to_nearest_gene_bp = 0`; otherwise the gene whose midpoint is closest. Non-coding genes (lncRNAs, miRNAs, pseudogenes, etc.) are ignored — these annotations are noisier and shift the "nearest gene" call between releases, so we restrict to the protein-coding set for both gene and TSS lookups. |
+| `distance_to_nearest_gene_bp` | Distance in bp from peak to the gene above. `0` = peak overlaps the gene body. |
+| `nearest_TSS` | Closest **protein-coding transcription start site** to the peak midpoint (TSS = gene `Start` for + strand, gene `End` for − strand). The TSS is the relevant landmark for "is this peak at a promoter?" — different from "nearest gene body." |
+| `distance_to_TSS_bp` | `|peak_midpoint − nearest_TSS|`. Drives the `region_class` assignment. |
+| `region_class` | Three-bin class derived from `distance_to_TSS_bp`: `promoter` (<2 kb), `proximal` (2–20 kb), `distal` (≥20 kb). The 2 kb cutoff is the conventional "near a TSS = promoter" threshold; 20 kb is the conventional "near-gene enhancer" cutoff. Together with `direction`, this column drives the headline χ² / binomial stats. |
+
+> **Why `nearest_gene` and `nearest_TSS` can disagree.** Nearest *gene* matches by gene-body overlap, so a peak deep inside a long gene gets distance 0 anywhere along that gene. Nearest *TSS* only counts the start point. A peak deep inside a long gene's body is "in" that gene but possibly far from its TSS — so `distance_to_TSS_bp` may point to a different nearby protein-coding gene whose TSS is closer to the peak midpoint. That's why the two columns sometimes name different genes for the same peak.
+
+## Polymorphic TE catalog (Schloissnig et al. 2025, 1KG-ONT-Vienna)
+
+Sequence-resolved polymorphic SV calls across 908 phased 1KG-ONT individuals on GRCh38, SVAN-annotated for TE family. The Schloissnig 2025 primary pipeline ran on T2T-CHM13; the GRCh38 callset is a derived sidecar built by reconstructing per-sample CHM13 haplotypes, aligning to GRCh38 with `minimap2`, and re-calling SVs with `svim-asm v1.0.3` (Schloissnig 2025 supp Note 4). Biallelic ≥50 bp INS/DEL; SVAN 1.3 re-run on the hg38-coordinate variants.
+
+### Download the BCFs and reference manifests
+
+```bash
+mkdir -p data/schloissnig_2025/vcf
+cd data/schloissnig_2025
+
+# Top-level release manifest (lists every file in release/v1.1/ with sizes + md5s; 3.6 KB)
+curl -sS -L --fail -o manifest_20241216.tsv \
+  "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1KG_ONT_VIENNA/release/v1.1/manifest_20241216.tsv"
+# md5: 6399d3cefcc5a63e12e8c5b0982042f7
+
+cd vcf
+
+# SVIM-asm hg38 callset, SVAN-annotated (40 MB, no GTs)
+curl -sS -L --fail -o svim.asm.hg38.noGt.SVAN_1.3.bcf \
+  "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1KG_ONT_VIENNA/release/v1.1/svim-asm-hg38/svim.asm.hg38.noGt.SVAN_1.3.bcf"
+# md5: fe816142d21ef48960fd9f6ecb82ec6e
+curl -sS -L --fail -o svim.asm.hg38.noGt.SVAN_1.3.bcf.csi \
+  "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1KG_ONT_VIENNA/release/v1.1/svim-asm-hg38/svim.asm.hg38.noGt.SVAN_1.3.bcf.csi"
+# md5: cd3d858a64d3443020c8fb969faf49f8
+
+# SVIM-asm hg38 callset with per-sample GTs (61 MB, 908 samples, no SVAN)
+curl -sS -L --fail -o svim.asm.hg38.bcf \
+  "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1KG_ONT_VIENNA/release/v1.1/svim-asm-hg38/svim.asm.hg38.bcf"
+# md5: ac4751b69374dee1cec8414d771947ee
+curl -sS -L --fail -o svim.asm.hg38.bcf.csi \
+  "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1KG_ONT_VIENNA/release/v1.1/svim-asm-hg38/svim.asm.hg38.bcf.csi"
+# md5: a85363c28c5ba365c3ff0ffde018187a
+
+# Small README documenting the ShapeIt5-phased callset (380 B; kept for upstream context)
+curl -sS -L --fail -o shapeit5-phased-callset_README.md \
+  "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1KG_ONT_VIENNA/release/v1.1/shapeit5-phased-callset/shapeit5-phased-callset_README.md"
+# md5: 6e9b52b7aafbc687e115b8db32b66c13
+```
+
+### Download the Schloissnig analysis bundle (sample metadata)
+
+`bundle_extracted/sample.tsv` (donor IDs + population + sex; 18 KB) comes from the Zenodo-hosted analysis-code zip and contains metadata for all 1,019 donors with long-read sequencing.
+
+```bash
+# Zenodo deposit (330 MB zip; mostly analysis scripts + the small sample.tsv we need)
+curl -sS -L --fail -o data/schloissnig_2025/unused/sv-analysis-v1.1.zip \
+  "https://zenodo.org/records/14535469/files/1kg-ont-vienna/sv-analysis-v1.1.zip?download=1"
+# md5: a36f30379d34b29a302517a39d568e59
+
+# Extract just the two files we keep (sample metadata + bundle README)
+mkdir -p data/schloissnig_2025/bundle_extracted
+unzip -j data/schloissnig_2025/unused/sv-analysis-v1.1.zip \
+    "1kg-ont-vienna-sv-analysis-9c5da4f/sample.tsv" \
+    "1kg-ont-vienna-sv-analysis-9c5da4f/README.md" \
+    -d data/schloissnig_2025/bundle_extracted/
+# sample.tsv md5: 84cab53b01ab28c8c32453caeaf012ad
+```
+
+### Build the 908-sample list
+
+`bundle_extracted/sample.tsv` covers all 1,019 long-read donors, but only 908 of those were ShapeIt5-phased — the other 111 were excluded because they're related to other donors in the cohort (per ShapeIt5's "908 unrelated samples" note in `shapeit5-phased-callset_README.md`). The 908 phased donors define our analysis cohort, and the cohort list is encoded only in the phased VCF's sample header. We extract it once and cache it as `phased_908_samples.txt` (used by `build_supp_table2_individuals.py`):
+
+```bash
+# Requires the (large, gitignored) shapeit5-phased VCF. Download once:
+curl -sS -L --fail -o data/schloissnig_2025/unused/shapeit5-phased-callset_final-vcf.phased.vcf.gz \
+  "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1KG_ONT_VIENNA/release/v1.1/shapeit5-phased-callset/shapeit5-phased-callset_final-vcf.phased.vcf.gz"
+# Extract sample IDs (one per line; equivalent to bcftools query -l on the phased VCF header)
+bcftools query -l data/schloissnig_2025/unused/shapeit5-phased-callset_final-vcf.phased.vcf.gz \
+  > data/schloissnig_2025/phased_908_samples.txt
+# 908 lines
+# md5: 56361b82acb52f96ef5f176b4c6c3fad
+```
+
+### Filter to canonical-chrom solo MEI insertions
+
+`ITYPE_N=solo` is the canonical solo MEI subset. Drops alt contigs and chrM:
+
+```bash
+python scripts/fig2_polymorphic_TE_example/filter_solo_TE_INS_vcf.py \
+    --svan-bcf data/schloissnig_2025/vcf/svim.asm.hg38.noGt.SVAN_1.3.bcf \
+    --gt-bcf   data/schloissnig_2025/vcf/svim.asm.hg38.bcf \
+    --output   data/schloissnig_2025/vcf/solo_TE_INS.svim_asm.hg38.SVAN.vcf.gz
+# 29,839 solo MEI records (chr1..chr22, chrX, chrY)
+# md5: 99f6e901a509ffa2250e524ab87c7395
+```
+
+### Filter to canonical-chrom solo MEI deletions
+
+The same script with `--itype "" --dtype solo` (insertions excluded, deletions kept):
+
+```bash
+python scripts/fig2_polymorphic_TE_example/filter_solo_TE_INS_vcf.py \
+    --svan-bcf data/schloissnig_2025/vcf/svim.asm.hg38.noGt.SVAN_1.3.bcf \
+    --gt-bcf   data/schloissnig_2025/vcf/svim.asm.hg38.bcf \
+    --itype    "" \
+    --dtype    solo \
+    --output   data/schloissnig_2025/vcf/solo_TE_DEL.svim_asm.hg38.SVAN.vcf.gz
+# 3,863 solo TE deletion records (chr1..chr22, chrX, chrY)
+# Family breakdown: 3,173 Alu / 437 L1 / 247 SVA / 5 LTR5_Hs / 1 U4
+# md5: 73d012b9a27a14bea4f79d53d2f05c7d
+```
+
+### SVLEN sign convention
+
+The genotyped BCF (`svim.asm.hg38.bcf`) stores `SVLEN` literally per the VCF spec: positive for INS (e.g. `+460`), negative for DEL (e.g. `-470`). Across all 76,514 DEL records, SVLEN is negative without exception. One uniform formula recovers it from the alleles: `svlen = length(ALT) − length(REF)` (anchor-excluded). Downstream Supp Tables use `ins_len` (positive) and `del_len` (negative), matching SVLEN exactly. The SVAN BCF (`svim.asm.hg38.noGt.SVAN_1.3.bcf`) does not carry SVLEN — only `INS_LEN` / `DEL_LEN`, which are anchor-included and 1 bp larger in absolute value; we do not use those.
+
+**Solo-MEI analysis substrate.** The genotyped BCF labels every record with `SVTYPE` (`INS` / `DEL`); the SVAN BCF further sub-classifies each by `ITYPE_N` / `DTYPE_N`. We analyse only the canonical `solo` MEI subset — the cleanest TE-derived substrate for sequence-to-function variant-effect prediction. Of 89,257 INS / 76,514 DEL genotyped records, 29,839 INS / 3,863 DEL are SVAN-`solo` on canonical chromosomes, and 29,461 INS / 3,845 DEL remain after dropping multi-allelic sites (these are the catalogs in **Supp Tables 3 / 6**). Other classes (VNTR tandem repeats, orphan/partnered transductions, PSD pseudogenes, chimeras, and the DUP variants) are excluded. This funnel is reported in the Methods rather than as a standalone supplementary table.
+
+The same numbers can be reproduced directly with `bcftools` for spot-checking:
+
+```bash
+# ITYPE_N distribution (SVAN INS classes)
+bcftools view data/schloissnig_2025/vcf/svim.asm.hg38.noGt.SVAN_1.3.bcf \
+  | grep -v '^#' \
+  | awk 'BEGIN{FS="\t"} {n=split($8,p,";"); for(i=1;i<=n;i++) if(p[i]~/^ITYPE_N=/){split(p[i],kv,"="); print kv[2]}}' \
+  | sort | uniq -c | sort -rn
+
+# DTYPE_N distribution (SVAN DEL classes) — same idiom, ^DTYPE_N= instead
+bcftools view data/schloissnig_2025/vcf/svim.asm.hg38.noGt.SVAN_1.3.bcf \
+  | grep -v '^#' \
+  | awk 'BEGIN{FS="\t"} {n=split($8,p,";"); for(i=1;i<=n;i++) if(p[i]~/^DTYPE_N=/){split(p[i],kv,"="); print kv[2]}}' \
+  | sort | uniq -c | sort -rn
+
+# SVTYPE totals from genotyped BCF
+bcftools view -i 'INFO/SVTYPE="INS"' data/schloissnig_2025/vcf/svim.asm.hg38.bcf | grep -v '^#' | wc -l   # 89,257
+bcftools view -i 'INFO/SVTYPE="DEL"' data/schloissnig_2025/vcf/svim.asm.hg38.bcf | grep -v '^#' | wc -l   # 76,514
+```
+
+### Supp Tables 3 + 6 — polymorphic TE insertion / deletion catalogs
+
+Both catalogs join the SVAN-annotated VCF (`solo_TE_{INS,DEL}.svim_asm.hg38.SVAN.vcf.gz` — DTYPE_N=solo) with the genotyped BCF (`svim.asm.hg38.bcf`) on variant ID (`SvimAsm########`). Pre-baked AC/AN/AF/MAF/NS/HWE/ExcHet/AC_Hom/AC_Het/AC_Hemi/**SVLEN** are read directly from the genotyped BCF's INFO. Per-sample GT iteration is used only to compute carrier sample-ID lists (`carriers_hom`, `carriers_het`) and the NA12878 GT.
+
+**Filters:**
+1. `DTYPE_N=solo` — applied upstream in `filter_solo_TE_INS_vcf.py` (the SVAN VCFs we read are already solo-only). Drops nested / chimeric / partial-element records.
+2. **Biallelic-only** — records where the genotyped BCF's ALT contains a comma (multi-allelic at that position, e.g. anchor-only `T` allele + a second complex allele) are skipped. Without `bcftools norm -m -` first, per-allele AC/AF/MAF/SVLEN can't be unambiguously matched to the SVAN-annotated allele. **INS**: 378 of 29,839 SVAN records skipped (1.3%). **DEL**: 18 of 3,863 SVAN records skipped (0.47%).
+3. The `SVLEN` length column is sourced **verbatim from the genotyped BCF's `SVLEN` INFO field** (positive for INS, negative for DEL). We do **not** use SVAN's `INS_LEN` / `DEL_LEN` (anchor-included; +1 from SVLEN in absolute value).
+
+```bash
+# INS catalog
+python scripts/generate_supp_tables/build_supp_table3_polymorphic_TE_insertions.py \
+    --filtered-vcf data/schloissnig_2025/vcf/solo_TE_INS.svim_asm.hg38.SVAN.vcf.gz \
+    --gt-bcf       data/schloissnig_2025/vcf/svim.asm.hg38.bcf \
+    --tsv          supptables/supp_table_3_polymorphic_TE_insertions.tsv
+# 29,461 biallelic solo MEI rows × 27 cols (+ 378 multi-allelic skipped)
+# Family breakdown: 23,087 Alu / 4,229 L1 / 2,115 SVA / 27 LTR5_Hs / 2 Alu,L1 / 1 U6
+# NA12878 polymorphic INS count: 1,565 (NA12878 carriers)
+# SVLEN range: 50 to 6,063 bp (all positive)
+
+# DEL catalog
+python scripts/generate_supp_tables/build_supp_table6_polymorphic_TE_deletions.py \
+    --filtered-vcf data/schloissnig_2025/vcf/solo_TE_DEL.svim_asm.hg38.SVAN.vcf.gz \
+    --gt-bcf       data/schloissnig_2025/vcf/svim.asm.hg38.bcf \
+    --tsv          supptables/supp_table_6_polymorphic_TE_deletions.tsv
+# 3,845 biallelic solo TE DEL rows × 27 cols (+ 18 multi-allelic skipped)
+# Family breakdown: 3,156 Alu / 436 L1 / 247 SVA / 5 LTR5_Hs / 1 U4
+# NA12878 DEL alt_dose: 2,588 retain TE (0/0) / 589 het / 668 hom-DEL
+# SVLEN range: -55 to -10,692 bp (all negative)
+```
+
+The NA12878=0/0 group in each catalog is the population available for the downstream eQTL pipeline filter. INS arm: NA12878=0/0 means NA12878 doesn't carry the (non-reference) inserted TE → matches hg38. DEL arm: NA12878=0/0 means NA12878 retains the TE → matches hg38. Both mitigate AG's REF-allele bias by keeping only variants where NA12878 = reference.
+
+Both builders accept an optional `--xlsx` to inject into a workbook; we skip that path during analysis (`SuppTables.xlsx` is composed manually at submission). TSVs in `supptables/` are authoritative.
+
+## Matched-individual cohort manifest (Supp Table 2)
+
+One row per donor with tier flags + per-source download URLs. 1KGP NA/HG IDs map to Coriell GM IDs via MAGE's explicit `coriell_id ↔ kgp_id` column; samples not in MAGE fall back to the `NA→GM` substring substitution.
+
+```bash
+python scripts/generate_supp_tables/build_supp_table2_individuals.py \
+    --xlsx supptables/SuppTables.xlsx \
+    --tsv  supptables/supp_table_2_individuals.tsv
+# 908 rows × 42 cols
+# Tier 1 (MAGE+GEUVADIS):  360
+# Tier 2 (any chromatin):  81
+# Tier 1 ∩ Tier 2:         64
+# All-3-assays donors (5): GM12878, GM18498, GM18499, GM18502, GM18520
+```
+
+## RNA cohort precomputed matrices
+
+### MAGE (Tier 1 MAGE-260, primary)
+
+The MAGE consortium (Taylor et al. 2024, *Nature*, [doi:10.1038/s41586-024-07708-2](https://doi.org/10.1038/s41586-024-07708-2)) released salmon-quantified, DESeq2-VST-transformed gene expression for 731 1KGP LCLs. 260 of those donors overlap the Schloissnig phased-908 cohort.
+
+**Source:** Dropbox folder shared on the [mccoy-lab/MAGE](https://github.com/mccoy-lab/MAGE) GitHub README → `MAGE.v1.0.data/` ([Zenodo DOI 10.5281/zenodo.10535719](https://zenodo.org/records/10535719) is the same content as a 59.5 GB zip).
+
+**Files used (3 of many; total ~150 MB).** Local layout mirrors the Dropbox tree under `data/rna_cohorts/precomputed/MAGE/`:
+
+| Local relative path                                                    | Purpose                                                                             |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `sample_library_info/sample.metadata.MAGE.v1.0.txt`                  | Donor metadata (sample_coriellID, batch, continentalGroup, population, sex). 58 KB. |
+| `global_trend_results/global_expression_trends/expression.vst.csv`   | VST gene × donor matrix; rows=ENSG.X, cols=donor 1KG ID. ~150 MB.                  |
+| `QTL_results/eQTL_results/expression_filteredGenes.MAGE.v1.0.txt.gz` | High-expression gene list (≥6 counts + ≥0.1 TPM in ≥20% samples). <1 MB.         |
+
+**Manual download:** Open the Dropbox folder, navigate into each subfolder, and right-click → Download. Preserve the subdir structure under `data/rna_cohorts/precomputed/MAGE/`.
+
+**Caveats:**
+
+- MAGE matrix uses GENCODE v38 annotations. Acceptable for our use case (TE-distal eQTLs, 500 kb windows).
+- A published sample swap (`HG00237` ↔ `NA11919`) is unfixed in the deposit. Verified neither donor is in our 908-donor cohort, but downstream code defensively skips both.
+- VST values are not raw expression — they are on a DESeq2-internal log-like scale (~4–14). Do not back-transform to TPM.
+
+### GEUVADIS (Tier 1 GEUVADIS-121, replication)
+
+```bash
+mkdir -p data/rna_cohorts/precomputed/GEUVADIS
+curl -L -o data/rna_cohorts/precomputed/GEUVADIS/GD660.GeneQuantRPKM.txt.gz \
+    'https://ftp.ebi.ac.uk/pub/databases/microarray/data/experiment/GEUV/E-GEUV-1/analysis_results/GD660.GeneQuantRPKM.txt.gz'
+# 58 MB, log₂(RPKM+1), GENCODE v12 era
+```
+
+GEUVADIS-121 is the intersection of the published 462-donor RPKM matrix with the Schloissnig phased-908 cohort. We use it as a replication arm; the GENCODE v12 ↔ MAGE v38 mismatch is handled by intersecting on unversioned ENSG identifiers.
+
+## Locked Fig 3 eQTL pipeline
+
+MatrixEQTL on inverse-normal-transformed residuals (DESeq2 VST → covariates regressed out → INT) following Bravo et al. 2024. Covariates: `continentalGroup + sex + batch` (MAGE) or `continentalGroup + sex` (GEUVADIS). Variant filters: NA12878 = 0/0, MAF > 0.01, ≥5 hom-alt and ≥5 hom-ref carriers per cohort. cis-window: ±500 kb. Multiple testing: BH-FDR across all (variant, gene) pairs.
+
+**Three caveats worth knowing before reading the eQTL results:**
+
+- **NA12878 = 0/0 filter.** We keep only insertions absent from the GM12878 reference donor. AlphaGenome was trained on GM12878 RNA-seq, so for variants NA12878 carries, the reference-allele prediction is artifactually inflated; restricting to NA12878 = 0/0 keeps AG's hg38-based prediction matched to the no-insertion state.
+- **MAGE and GEUVADIS are not independent samples.** Both profile 1000 Genomes LCLs and share donors, so GEUVADIS replication is across RNA-seq pipelines (technical), not across independent individuals. It's used only as supporting evidence in the Supplement; the main-text statistics are MAGE-260.
+- **Effect sizes are attenuated.** We residualize expression against covariates and regress genotype against the residuals (genotype is not separately residualized). Because TE allele frequencies are population-stratified, this shrinks the estimated slope by ~(1 − R²_{genotype~covariates}) — conservative (no false-positive inflation) and direction/rank-preserving. We treat observed β as direction/rank evidence, not a fully covariate-adjusted magnitude.
+
+```bash
+# install required R packages (idempotent; skips already-installed)
+Rscript scripts/install_R_deps.R   # MatrixEQTL, matrixStats, R.utils
+
+# run pipeline for each cohort
+Rscript scripts/fig3_polymorphic_TE_eQTLs/eqtl_matrixeqtl_pipeline.R --cohort MAGE
+# → results/eqtl_matrixeqtl_MAGE260/all_polymorphicTE_eqtls.tsv (9,234 rows)
+# → results/eqtl_matrixeqtl_MAGE260/expression_INT_residuals_MAGE.rds (cached)
+# → results/eqtl_matrixeqtl_MAGE260/genotype_dosage_MAGE.rds (cached)
+# → results/eqtl_matrixeqtl_MAGE260/expression_PC_diagnostic.tsv (PC × covariate)
+# → supptables/supp_table_9_pc_covariate_diagnostic.tsv (Supp 9; same content)
+
+Rscript scripts/fig3_polymorphic_TE_eQTLs/eqtl_matrixeqtl_pipeline.R --cohort GEUVADIS
+# → results/eqtl_matrixeqtl_GEUVADIS121/all_polymorphicTE_eqtls.tsv (4,192 rows)
+# → results/eqtl_matrixeqtl_GEUVADIS121/expression_INT_residuals_GEUVADIS.rds (cached)
+# → results/eqtl_matrixeqtl_GEUVADIS121/genotype_dosage_GEUVADIS.rds (cached)
+
+# cross-cohort comparison for the candidate pick set
+Rscript scripts/fig3_polymorphic_TE_eQTLs/cross_cohort_compare.R
+# → results/eqtl_matrixeqtl_GEUVADIS121/candidate_picks_MAGE_vs_GEU.tsv
+
+# build the two cross-cohort supplementary tables
+Rscript scripts/generate_supp_tables/build_supp_tables_4_5_7_8_eqtl.R
+# → supptables/supp_table_4_top_gene_per_variant.tsv     (1,322 rows; one per variant)
+# → supptables/supp_table_5_all_variant_gene_pairs.tsv   (9,234 rows; long format)
+
+# DEL arm — same pipeline + builder with --variant_class DEL (Supp Tables 7/8)
+Rscript scripts/fig3_polymorphic_TE_eQTLs/eqtl_matrixeqtl_pipeline.R --cohort MAGE     --variant_class DEL
+# → results/eqtl_matrixeqtl_MAGE260_DEL/all_polymorphicTE_eqtls.tsv (4,354 rows; 594 testable variants; 55 q<0.05)
+Rscript scripts/fig3_polymorphic_TE_eQTLs/eqtl_matrixeqtl_pipeline.R --cohort GEUVADIS --variant_class DEL
+# → results/eqtl_matrixeqtl_GEUVADIS121_DEL/all_polymorphicTE_eqtls.tsv (2,453 rows; 19 q<0.05)
+Rscript scripts/generate_supp_tables/build_supp_tables_4_5_7_8_eqtl.R                 --variant_class DEL
+# → supptables/supp_table_7_top_gene_per_variant_DEL.tsv       (594 rows; one per DEL variant)
+# → supptables/supp_table_8_all_variant_gene_pairs_DEL.tsv     (4,354 rows; long format)
+# Cross-cohort concordance: 182 same_direction / 107 direction_flip / 91 gene_desert / 35 absent_in_GEU / 179 not_testable_in_GEU.
+
+# render per-candidate boxplots (one PDF per (variant, gene) pair)
+# Title shows TE-gene distance; subtitle shows eQTL β/p/q + AG_raw + AG_qtl
+# (looked up per (variant, gene) from Supp 5).
+Rscript scripts/fig3_polymorphic_TE_eQTLs/plot_fig3_eqtl_boxplots.R --cohort MAGE
+# → figures/fig3_eqtl_matrixeqtl/MAGE260/{variant_id}_{gene}.pdf  (9 PDFs)
+Rscript scripts/fig3_polymorphic_TE_eQTLs/plot_fig3_eqtl_boxplots.R --cohort GEUVADIS
+# → figures/fig3_eqtl_matrixeqtl/GEUVADIS121/{variant_id}_{gene}.pdf  (6 PDFs;
+#   3 candidates skipped as not testable in GEU-121 — see Methods)
+
+# Assemble the final multi-panel Figure 3 (3 eQTL boxplots + the AG-vs-MAGE
+# scatter) into one vector PDF for Illustrator. The exemplar variants are set
+# inside the script.
+Rscript scripts/fig3_polymorphic_TE_eQTLs/compose_fig3.R
+# → figures/FIG3_FINAL/Fig3.pdf
+```
+
+The pre-flight expression-PC × covariate diagnostic that informed the covariate choice is generated by the MAGE pipeline run above and lives in two places: `results/eqtl_matrixeqtl_MAGE260/expression_PC_diagnostic.tsv` (working copy) and `supptables/supp_table_9_pc_covariate_diagnostic.tsv` (Supp Table 9). It tabulates the variance in each top-10 expression PC explained by every candidate covariate (categorical: batch, continentalGroup, population, sex; continuous: RIN, numReads, RNAQubitConc, RNAQubitAmount). See `manuscript/results_fig3_eqtl.md` and `manuscript/main_text.md` (Methods → "eQTL pipeline") for the full methodology spec including the GENCODE v12-vs-v38 cross-version handling, the GEUVADIS replication-cohort caveats, and the SVLEN-vs-SVAN-INS_LEN convention note.
+
+## AlphaGenome variant-effect predictions
+
+The three AG-prediction scripts live in `scripts/` (promoted from `scripts/wip/` 2026-05-09 after vetting).
+
+### Build the variant tab + run AG predictions on the locked candidates
+
+For each of the four cross-cohort-replicating insertions (one per TE family), AlphaGenome is queried for predicted RNA-seq tracks in GM12878 (`EFO:0002784`). Inputs are pulled from the filtered VCF in VCF-anchor format (`REF` = single-base anchor, `ALT` = anchor + inserted sequence).
+
+```bash
+# Pull anchor + ALT sequence from the Schloissnig SVIM-asm BCF
+python scripts/fig2_polymorphic_TE_example/fetch_variant_alt_seq.py \
+    --ids SvimAsm00060017 SvimAsm00022857 SvimAsm00107233 SvimAsm00133580 \
+    --out data/fig3_tier1_variants.tab
+
+# Per-variant AG prediction tracks (RNA + ChIP-histone overlays)
+# For the full 9-candidate × 3-layout panel set used to pick the main figure,
+# see scripts/fig3_polymorphic_TE_eQTLs/render_fig3_AG_panels.sh below — it batches three runs (RNA-only,
+# active-marks, full-chromatin) and produces 81 PDFs total.
+python scripts/fig2_polymorphic_TE_example/plot_polymorphic_TE_insertion.py \
+    --variants data/fig3_tier1_variants.tab \
+    --ontology EFO:0002784 --label GM12878 \
+    --assays RNA_SEQ CHIP_HISTONE \
+    --out-dir figures/fig3_AG_predictions \
+    --plots baseline overlay
+
+# AG variant-effect scoring with GeneMaskLFCScorer (Liu 2026 Fig 2A formula)
+# Outputs raw_score (effect magnitude = LFC) AND quantile_score (AG-emitted
+# confidence in [-1,+1]) per (variant, gene, RNA-seq track) tuple.
+python scripts/fig4_5_LTR10_CRISPR_comparison/score_variant_lfc.py \
+    --variants data/fig3_tier1_variants.tab \
+    --output_dir results/AG_LFC_polymorphic_TE
+```
+
+### Score all 1,322 MAGE-testable INS variants + merge into Supp 4 / Supp 5
+
+```bash
+# Build the full 1,322-variant tab from Supp 4's variant_id column
+awk -F'\t' 'NR>1 {print $1}' supptables/supp_table_4_top_gene_per_variant.tsv \
+  > /tmp/variant_ids_1322.txt
+python scripts/fig2_polymorphic_TE_example/fetch_variant_alt_seq.py \
+    --ids $(cat /tmp/variant_ids_1322.txt | tr '\n' ' ') \
+    --out data/fig3_all_testable_variants.tab
+
+# Score every variant (1,321 succeed; SvimAsm00124628 = AG gene-desert, skipped)
+python scripts/fig4_5_LTR10_CRISPR_comparison/score_variant_lfc.py \
+    --variants data/fig3_all_testable_variants.tab \
+    --output_dir results/AG_LFC_polymorphic_TE
+# → 1,321 per-variant CSVs + master_ranked_GM12878.csv (90,876 rows)
+
+# Aggregate (mean across all gene-strand-matched RNA-seq tracks AG returns,
+# typically 3) and merge 8 AG columns (RNA + 3 chromatin marks × raw + quantile) into Supp 4 / 5
+python scripts/fig3_polymorphic_TE_eQTLs/merge_AG_scores_into_supp_tables.py   # default --variant_class INS
+# → Supp 4: 1,101/1,322 rows get AG scores (83.3%; rest are gene-desert per MAGE)
+# → Supp 5: 9,200/9,234 pairs get AG scores (99.6%)
+```
+
+### DEL arm — score all 594 MAGE-testable DEL variants + merge into Supp 7 / Supp 8
+
+Mirrors the INS arm pipeline. Same VCF-standard biallelic representation (REF = anchor + deleted sequence, ALT = anchor only — opposite of INS); same `score_variant_lfc.py` and `score_variant_chromatin.py` scripts which accept both INS and DEL records. Output directories suffixed `_DEL` to keep the two arms cleanly separated.
+
+```bash
+# Build the 594-variant DEL tab from Supp 7's variant_id column
+awk -F'\t' 'NR>1 {print $1}' supptables/supp_table_7_top_gene_per_variant_DEL.tsv \
+  > /tmp/del_ids_594.txt
+python scripts/fig2_polymorphic_TE_example/fetch_variant_alt_seq.py \
+    --ids $(cat /tmp/del_ids_594.txt | tr '\n' ' ') \
+    --out data/fig3_all_testable_DEL_variants.tab
+
+# RNA LFC scoring
+python scripts/fig4_5_LTR10_CRISPR_comparison/score_variant_lfc.py \
+    --variants data/fig3_all_testable_DEL_variants.tab \
+    --cell_line GM12878 \
+    --output_dir results/AG_LFC_polymorphic_TE_DEL
+
+# Chromatin scoring (H3K27ac + H3K4me1 + ATAC)
+python scripts/fig2_polymorphic_TE_example/score_variant_chromatin.py \
+    --variants data/fig3_all_testable_DEL_variants.tab \
+    --output_dir results/AG_chromatin_polymorphic_TE_DEL
+
+# Merge AG scores into Supp 7 / Supp 8 (--variant_class DEL switches all paths)
+python scripts/fig3_polymorphic_TE_eQTLs/merge_AG_scores_into_supp_tables.py --variant_class DEL
+```
+
+### Render the 9-candidate panel batch (3 layouts × 3 plot types each)
+
+For deciding which 4-of-9 to feature in the main figure, render all 9 candidates with three different chromatin-track configurations (RNA-only / active-marks / full-chromatin) and three plot types (baseline / overlay / diff):
+
+```bash
+# Build the 9-candidate variant tab (locked candidate set)
+python scripts/fig2_polymorphic_TE_example/fetch_variant_alt_seq.py \
+    --ids SvimAsm00107100 SvimAsm00133580 SvimAsm00169720 SvimAsm00022857 \
+          SvimAsm00060012 SvimAsm00146138 SvimAsm00042027 SvimAsm00107233 \
+          SvimAsm00060017 \
+    --out data/fig3_9_candidates.tab
+
+# Batch render: RNA-only / active-marks / full-chromatin × baseline/overlay/diff
+bash scripts/fig3_polymorphic_TE_eQTLs/render_fig3_AG_panels.sh
+# → figures/fig3_AG_predictions/rna_only/        (27 PDFs: 9 variants × 3 plots)
+# → figures/fig3_AG_predictions/active_marks/    (27 PDFs)
+# → figures/fig3_AG_predictions/full_chromatin/  (27 PDFs)
+```
+
+### Build Supp Fig SX (per-track AG breakdown for the 4 main-fig variants)
+
+Documents the within-protocol variability of AG predictions across the three GM12878 RNA-seq tracks (stranded total + stranded polyA + unstranded polyA). Most variants show within-protocol agreement; small / fragmentary inserts (e.g. the 53 bp SVA fragment near *NR1H3*) can show meaningful unstranded-vs-stranded divergence — this is the basis for the Discussion's Sixth Limitation.
+
+```bash
+Rscript scripts/fig3_polymorphic_TE_eQTLs/plot_supp_fig_AG_per_track.R
+# → figures/supp_fig_AG_per_track/supp_fig_AG_per_track.pdf  (composite, 4-row × 2-col)
+# → figures/supp_fig_AG_per_track/{variant_id}_{gene}.pdf    (per-variant; Illustrator-editable)
+# → figures/supp_fig_AG_per_track/supp_fig_AG_per_track_data.tsv  (underlying numbers)
+```
+
+The `score_variant_lfc.py` raw_score formula matches Liu et al. 2026 Fig 2A: `LFC = log(mean(ALT exon-masked RNA-seq) + 1e-3) − log(mean(REF exon-masked RNA-seq) + 1e-3)`. The AG-emitted `quantile_score` is the variant's percentile against a precomputed genome-wide null distribution, in [-1, +1] (|q|→1 = extreme of null).
+
+## Fig 4 — LTR10 CRISPRi enhancer benchmarking (HCT116)
+
+### Score the 6 CRISPRi-validated LTR10 enhancers + 1 control deletion
+
+`data/LTR10_variants.tab` carries the six CRISPRi-validated LTR10 enhancers from Ivancevic 2024 (named after their target genes: MEF2D, FGF2, XRCC4, ATG12, MCPH1, KDM6A) plus one intronic control deletion. Variants are encoded CRISPR-style — `REF = full element sequence, ALT = '.'` — which `scripts/fig4_5_LTR10_CRISPR_comparison/score_variant_lfc.py` and `scripts/fig2_polymorphic_TE_example/score_variant_chromatin.py` accept directly (verified bit-identical to the VCF-biallelic form on LTR10.ATG12, 87/87 gene-track scores).
+
+```bash
+# RNA: AG GeneMaskLFCScorer on RNA_SEQ in HCT116
+python scripts/fig4_5_LTR10_CRISPR_comparison/score_variant_lfc.py \
+    --variants   data/LTR10_variants.tab \
+    --cell_line  HCT116 \
+    --ontology   EFO:0002824 \
+    --output_dir results/AG_LFC_LTR10_CRISPR
+
+# Chromatin: AG CenterMaskScorer (ATAC + H3K27ac + H3K4me1) in HCT116
+python scripts/fig2_polymorphic_TE_example/score_variant_chromatin.py \
+    --variants   data/LTR10_variants.tab \
+    --cell_line  HCT116 \
+    --ontology   EFO:0002824 \
+    --output_dir results/AG_chromatin_LTR10_CRISPR
+```
+
+### Build Supp Table 10 — per-(variant, gene) AG predictions
+
+```bash
+python scripts/generate_supp_tables/build_supp_table10_LTR10_CRISPR_AG_predictions.py \
+    --variants      data/LTR10_variants.tab \
+    --rna-dir       results/AG_LFC_LTR10_CRISPR \
+    --chromatin-dir results/AG_chromatin_LTR10_CRISPR \
+    --cell-line     HCT116 \
+    --tsv           supptables/supp_table_10_LTR10_CRISPR_AG_predictions.tsv
+# → 90 rows × 20 cols (7 variants × protein-coding genes within AG's ±500 kb window).
+# Within each variant block, genes are sorted by descending |AG_RNA_raw_score|;
+# identity and chromatin columns are populated only on the top-gene row.
+# RNA scores follow the Supp 4/5/7/8 convention: stranded RNA-seq tracks only
+# (unstranded polyA dropped before per-gene mean).
+```
+
+Fig 4 (locked 2026-05-16) is a deep-dive on LTR10.ATG12: four panels — (A) experimental browser tracks adapted from Ivancevic 2024, (B) AlphaGenome-predicted browser tracks across the same 120 kb window, (C) AG-predicted gene-expression coordinate scatter (legacy panel), (D) CRISPR-vs-AG dumbbell.
+
+### Panel B — AG-predicted browser shot
+
+```bash
+python scripts/fig4_5_LTR10_CRISPR_comparison/plot_AG_browser_shot.py \
+    --variant-id LTR10.ATG12 \
+    --coords chr5:115820000-115940000 \
+    --track-height 0.3 --fig-width 8 \
+    --tf-ymax 1000 --h3k27ac-ymax 1000 --h3k4me1-ymax 1000 \
+    --atac-ymax 20 --min-rna-neg-ymax 3 \
+    --output figures/FIG4_FINAL/browser_shots/LTR10.ATG12_browser.pdf
+# → 613.6 × 258.2 pt PDF. 9-track stack: HCT116 JUND/FOSL1/H3K27ac/H3K4me1/ATAC/
+#   total RNA-seq (stranded +/− mirrored) + sigmoid colon H3K27ac/H3K4me1.
+#   HCT116 (EFO:0002824), sigmoid colon (UBERON:0001159). Bold group headers
+#   ("HCT116", "Sigmoid colon") + bold LTR10.ATG12 label centred above the
+#   orange highlight rectangle. Inline recolour applied (no separate recolor
+#   step needed; pikepdf rewrites palette using locked assay colours).
+```
+
+### Panel C — LTR10.ATG12 coordinate scatter (legacy)
+
+```bash
+python scripts/fig4_5_LTR10_CRISPR_comparison/plot_variant_coord_scatter.py \
+    --variant LTR10.ATG12 \
+    --cell-line HCT116 \
+    --variants data/LTR10_variants.tab \
+    --rna-csv results/AG_LFC_LTR10_CRISPR/LTR10.ATG12_HCT116.csv \
+    --gencode data/gencode.v46.annotation.feather \
+    --gene-types protein_coding \
+    --color-threshold 0.9 \
+    --window-mb 10 \
+    --ylim -0.35 0.15 \
+    --output figures/FIG4_FINAL/LTR10.ATG12_HCT116_coord_scatter.pdf
+# → 11 protein-coding genes plotted within AG's ±500 kb window.
+# Dots: red if AG_RNA_quantile_score ≤ −0.9, blue if ≥ +0.9, grey otherwise
+# (softer than the 0.99 'high confidence' threshold used in Supp Tables 4/5/7/8;
+# 0.9 recovers small-magnitude CRISPRi-validated hits like TICAM2 and ARL14EPL).
+# Note: CCDC112 (CRISPRi-validated; TSS chr5:115,296,693) sits 633 kb upstream
+# of the variant midpoint, ~133 kb outside AG's 1 Mb scoring window, and is
+# therefore absent from this plot. Flag in figure legend.
+```
+
+### Panel D — LTR10.ATG12 CRISPR-vs-AG dumbbell
+
+```bash
+Rscript scripts/fig4_5_LTR10_CRISPR_comparison/plot_LTR10_dumbbell.R \
+    --variant LTR10.ATG12 \
+    --crispr_xlim='-3.25,1.25' --ag_xlim='-0.325,0.125' \
+    --output figures/FIG4_FINAL/dumbbells/LTR10.ATG12_dumbbell.pdf
+# → Paired-lollipop CRISPRi log₂FC vs AG raw_score for genes significant in
+#   either dataset (CRISPR padj < 0.05; AG |quantile_score| > 0.9). Spearman
+#   ρ = −0.04, Pearson r = +0.13 (both ns, n = 10 paired). CCDC112 appears
+#   on CRISPRi side only (outside AG's ±500 kb scoring window). Default
+#   non-compact mode for Fig 4 (full-size fonts + figure title).
+```
+
+See [figures/FIG4_FINAL/legend.md](figures/FIG4_FINAL/legend.md) for the draft caption and full caveat list.
+
+## Fig 5 — LTR10 CRISPR enhancer benchmarking (chromatin works, RNA fails)
+
+8-panel figure: AG correctly identifies LTR10 elements as functional CREs (genome-wide H3K27ac correlation, Panels A + B) but fails to predict the gene-regulatory consequences of CRISPR-perturbing each one (per-enhancer scatter panels C-H). Working title: *"AlphaGenome accurately identifies LTR10 enhancers but fails to connect them to target gene dysregulation"*.
+
+### Build Supp Table 11 — AG H3K27ac vs experimental ChIP across all 650 LTR10A/F elements
+
+```bash
+python scripts/generate_supp_tables/build_supp_table11_LTR10AF_experimental_vs_AG.py \
+    --input data/650_LTR10AF_with_experimental_and_predicted.tsv \
+    --tsv   supptables/supp_table_11_LTR10AF_experimental_vs_AG.tsv
+# → 650 rows × 12 cols. Adds length_bp + family + 'candidate' flag (the 113
+#   elements with experimental peak data — the "yellow" highlighted set in
+#   the legacy Fig 1 plot) to the prior-work source data.
+```
+
+### Panel A — waterfall + Panel B — correlation scatter (both H3K27ac, all 650 LTR10A/F)
+
+```bash
+python scripts/fig4_5_LTR10_CRISPR_comparison/plot_LTR10AF_chromatin_waterfall.py \
+    --mark H3K27ac \
+    --output figures/FIG5_FINAL/panelA_LTR10AF_H3K27ac_waterfall.pdf
+# → 650 bars ranked by AG H3K27ac; 113 candidates orange, 8 CRISPR-validated
+#   fragments labelled in red. (8 fragments = 6 elements; LTR10.ATG12 and
+#   LTR10.XRCC4 are each split into _1/_2 in the merged set.)
+
+python scripts/fig4_5_LTR10_CRISPR_comparison/plot_LTR10AF_experimental_vs_AG_scatter.py \
+    --mark H3K27ac \
+    --output figures/FIG5_FINAL/panelB_LTR10AF_H3K27ac_scatter.pdf
+# → 113-element scatter. Pearson r = +0.40, p = 1e-05. Spearman ρ = +0.56,
+#   p = 2e-10. Confirms AG ranks LTR10 enhancer activity matching ChIP-seq.
+```
+
+### Build Supp Table 10 v2 — per-(variant, gene) AG predictions + CRISPR overlay
+
+```bash
+python scripts/generate_supp_tables/build_supp_table10_LTR10_CRISPR_AG_predictions.py \
+    --variants      data/LTR10_variants.tab \
+    --rna-dir       results/AG_LFC_LTR10_CRISPR \
+    --chromatin-dir results/AG_chromatin_LTR10_CRISPR \
+    --crispr-dir    Ivancevic_SciAdv2024/CRISPRi_results \
+    --gencode       data/gencode.v46.annotation.feather \
+    --cell-line     HCT116 \
+    --cis-window-mb 2 \
+    --tsv           supptables/supp_table_10_LTR10_CRISPR_AG_predictions.tsv
+# → 90 rows × 25 cols. Three row categories per variant:
+#   - Both: gene scored by AG AND in CRISPR table (rows for Fig 5 scatter)
+#   - CRISPR-only: CRISPR-sig down-regulated gene within ±2 Mb but outside
+#     AG's ±500 kb window (e.g. CCDC112 at LTR10.ATG12, MAOB + MIR222HG
+#     at LTR10.KDM6A)
+#   - AG-only: gene scored by AG but absent from CRISPR table
+# INCLUDE_NON_CODING allowlist + CRISPR_NAME_TO_ENSG alias map handle
+# legacy/non-protein-coding genes — see scripts/build_supp_table10_*.py
+```
+
+### Panels C-H — 6 per-enhancer AG-vs-CRISPR RNA scatters
+
+```bash
+for v in LTR10.ATG12 LTR10.XRCC4 LTR10.KDM6A LTR10.FGF2 LTR10.MCPH1 LTR10.MEF2D; do
+  ylim="-0.35,0.35"
+  [ "$v" = "LTR10.XRCC4" ] && ylim="-1.8,1.8"   # XRCC4 needs wider y to fit AC108174.1
+  Rscript scripts/fig4_5_LTR10_CRISPR_comparison/plot_fig5_scatter_AG_vs_CRISPR.R \
+    --variant=$v \
+    --supp10=supptables/supp_table_10_LTR10_CRISPR_AG_predictions.tsv \
+    --xlim=-3.5,3.5 \
+    --ylim=$ylim \
+    --output=figures/FIG5_FINAL/${v}_AG_vs_CRISPR_scatter.pdf
+done
+# → 6 PDFs in figures/FIG5_FINAL/. Per panel: x = CRISPR log2FC, y = AG raw_score;
+#   red = CRISPR padj<0.05 & log2FC<0, blue = CRISPR sig-up, grey = CRISPR n.s.
+#   Spearman ρ + Pearson r per panel (signed; unsigned not meaningful for enhancers).
+```
+
+See [figures/FIG5_FINAL/legend.md](figures/FIG5_FINAL/legend.md) for the draft caption (8-panel layout, 8-fragment / 6-element note, AG ±500 kb context limit, AC108174.1 legacy-symbol handling, in-house-vs-ENCODE H3K27ac comparison).
+
+## Fig 6 — AP1 motif perturbation at LTR10.ATG12
+
+Working title: *"AlphaGenome learned TF binding linearly but chromatin output has a training-distribution ceiling"*.
+
+In-silico titration of AP1 motif copy number from 0 to 200 motifs at the LTR10.ATG12 element. Reveals that AG predicts AP1-family TF binding (FOSL1 + JUND) as a near-linear motif-counting relationship, while the downstream chromatin output (H3K27ac, H3K4me1, ATAC) saturates at ~50 motifs and plateaus or declines — consistent with the training-distribution upper bound on AP1 motif density (LTR10.MCPH1 has the highest natural count at 30 motifs).
+
+### Generate perturbation alleles (deterministic, seed-locked)
+
+```bash
+# Scramble alleles: 8 in total (4 titration scrambling 5/10/15/20 of WT's 20
+# AP1 motifs + 4 TF substitutions replacing all 20 motifs with TP53/CTCF/
+# GATA1/HNF1A 7-bp consensus). Per-site composition-matched random
+# permutations of each motif's nucleotides (eliminates GC confound).
+python scripts/fig6_AP1_perturbation/generate_LTR10_ATG12_AP1_perturbations.py \
+    --variants  data/LTR10_variants.tab \
+    --out       data/LTR10_ATG12_AP1_perturbations.tab \
+    --motif-log data/LTR10_ATG12_AP1_perturbations.md
+
+# Addition alleles: 23 in total. Each writes new TGAGTCA motifs in place
+# over non-AP1 7-bp windows of the WT element (length-preserving MNV).
+# Adds 5/10/20/30/.../220 new motifs → totals 25, 30, 40, 50, ..., 240.
+# Random-shuffle greedy placement with non-overlap constraint; lower-N
+# alleles are strict subsets of higher-N (monotonic titration).
+python scripts/fig6_AP1_perturbation/generate_LTR10_ATG12_AP1_insertions.py \
+    --variants  data/LTR10_variants.tab \
+    --out       data/LTR10_ATG12_AP1_insertions.tab \
+    --motif-log data/LTR10_ATG12_AP1_insertions.md
+```
+
+### Run AG (predict_variant_tracks.py + score_variant_*.py with --allow-mnv)
+
+```bash
+# Chromatin tracks (H3K27ac, H3K4me1, ATAC, FOSL1, JUND) at the element locus
+python scripts/fig2_polymorphic_TE_example/predict_variant_tracks.py \
+    --variants  data/LTR10_ATG12_AP1_perturbations.tab \
+    --ontology  EFO:0002824 --cell-line HCT116 \
+    --requested-outputs CHIP_HISTONE,CHIP_TF,ATAC \
+    --keep-tracks H3K27ac H3K4me1 FOSL1 JUND ATAC \
+    --out-csv   results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element.csv
+
+python scripts/fig2_polymorphic_TE_example/predict_variant_tracks.py \
+    --variants  data/LTR10_ATG12_AP1_insertions.tab \
+    --ontology  EFO:0002824 --cell-line HCT116 \
+    --requested-outputs CHIP_HISTONE,CHIP_TF,ATAC \
+    --keep-tracks H3K27ac H3K4me1 FOSL1 JUND ATAC \
+    --out-csv   results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element_INS.csv
+
+# RNA at ATG12 gene body (using --locus to aggregate signal over the gene)
+python scripts/fig2_polymorphic_TE_example/predict_variant_tracks.py \
+    --variants  data/LTR10_ATG12_AP1_perturbations.tab \
+    --ontology  EFO:0002824 --cell-line HCT116 \
+    --requested-outputs RNA_SEQ \
+    --keep-tracks "total RNA-seq" \
+    --locus     chr5:115828199-115841837 \
+    --out-csv   results/AG_perturbation_LTR10_ATG12_AP1/predict_RNA_at_ATG12_gene.csv
+
+python scripts/fig2_polymorphic_TE_example/predict_variant_tracks.py \
+    --variants  data/LTR10_ATG12_AP1_insertions.tab \
+    --ontology  EFO:0002824 --cell-line HCT116 \
+    --requested-outputs RNA_SEQ \
+    --keep-tracks "total RNA-seq" \
+    --locus     chr5:115828199-115841837 \
+    --out-csv   results/AG_perturbation_LTR10_ATG12_AP1/predict_RNA_at_ATG12_gene_INS.csv
+```
+
+`score_variant_lfc.py` and `score_variant_chromatin.py` now accept `--allow-mnv` (opt-in for same-length REF/ALT substitutions). `score_variant_chromatin.py` also accepts `--include-tf FOSL1 JUND` (space-separated; opt-in to score CHIP_TF tracks via CenterMaskScorer).
+
+### Render Panel A1 + Panel A2
+
+```bash
+# Panel A1: FOSL1 + JUND on a shared y-axis (single subplot). Both climb
+# linearly through 200 motifs — "AG counts motifs → linear TF binding".
+python scripts/fig6_AP1_perturbation/plot_fig6_panelA1_TF_titration.py \
+    --chromatin-csv \
+        results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element.csv \
+        results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element_INS.csv \
+    --output figures/FIG6_FINAL/panelA1_TF_titration.pdf
+
+# Panel A2: 3 stacked subplots, each with own y-axis. (1) H3K27ac+H3K4me1
+# shared y. (2) ATAC own y. (3) ATG12 RNA own y (tiny strip).
+# All show peak at ~50 motifs → plateau/decline — saturation pattern visible
+# across every downstream readout.
+python scripts/fig6_AP1_perturbation/plot_fig6_panelA2_chromatin_RNA_titration.py \
+    --chromatin-csv \
+        results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element.csv \
+        results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element_INS.csv \
+    --rna-csv \
+        results/AG_perturbation_LTR10_ATG12_AP1/predict_RNA_at_ATG12_gene.csv \
+        results/AG_perturbation_LTR10_ATG12_AP1/predict_RNA_at_ATG12_gene_INS.csv \
+    --output figures/FIG6_FINAL/panelA2_chromatin_RNA_titration.pdf
+```
+
+### Render Panel B
+
+```bash
+# Panel B: grouped bars — AG-predicted H3K27ac + FOSL1 across WT, scram20 (all
+# AP1 motifs scrambled), and 4 TF substitutions (TP53/CTCF/GATA1/HNF1A). All
+# substitutions collapse to scram20 levels → AG's predicted enhancer activity
+# at LTR10.ATG12 is AP1-specific.
+python scripts/fig6_AP1_perturbation/plot_fig6_panelB_TF_specificity.py \
+    --chromatin-csv results/AG_perturbation_LTR10_ATG12_AP1/predict_chromatin_at_element.csv \
+    --output figures/FIG6_FINAL/panelB_TF_specificity.pdf
+```
+
+Panels C–D (score-based titration; genome-browser-style AG track shots) are not yet finalised. See [figures/FIG6_FINAL/legend.md](figures/FIG6_FINAL/legend.md) for the draft caption + caveats.
+
+## CSHL AI in Biology 2026 poster
+
+Poster panels for the CSHL AI in Biology conference (printed 2026-05-14) live in `figures/POSTER_CSHL_2026/`. They reuse the paper-figure scripts with `--width` / `--height` flag overrides (each script's argparse exposes these for poster-scale rendering). The poster content map — section text, four result block compositions, two takeaways, cross-figure assay color palette — is documented in [tasks/stage5_task5.1_CSHL_poster.md](tasks/stage5_task5.1_CSHL_poster.md).
+
+Two new scripts added during the poster build are useful beyond the poster:
+
+- `scripts/fig4_5_LTR10_CRISPR_comparison/plot_LTR10_dumbbell.R` — paired-lollipop ("dumbbell") plot showing CRISPRi-observed log2FC vs AlphaGenome-predicted effect size for the 10 measurable genes at the LTR10.ATG12 enhancer. Reads from `supptables/supp_table_10_LTR10_CRISPR_AG_predictions.tsv`.
+```bash
+Rscript scripts/fig4_5_LTR10_CRISPR_comparison/plot_LTR10_dumbbell.R \
+    --variant LTR10.ATG12 \
+    --supp10  supptables/supp_table_10_LTR10_CRISPR_AG_predictions.tsv \
+    --output  figures/POSTER_CSHL_2026/2b_ATG12_dumbbell.pdf
+```
+
+- `scripts/fig4_5_LTR10_CRISPR_comparison/recolor_AG_screenshot_tracks.py` — recolours filled tracks in an AlphaGenome SDK genome-browser PDF by rewriting the indexed-palette entry for each track image. Handles the AG SDK quirk of sharing one `/Stream` across multiple tracks with the same default color (script clones to fresh streams so each track recolours independently).
+```bash
+python scripts/fig4_5_LTR10_CRISPR_comparison/recolor_AG_screenshot_tracks.py \
+    --input  figures/POSTER_CSHL_2026/2a_AlphaGenome_screenshot.pdf \
+    --output figures/POSTER_CSHL_2026/2a_AlphaGenome_screenshot_recoloured.pdf
+```
+
+The six paper-figure scripts that gained `--width` / `--height` overrides during the poster build (plus other useful flags like `--only-label` for the waterfall, `--exemplars` for the Fig 3 scatter, `--only_variant` for the Fig 3 boxplots): `plot_LTR10AF_chromatin_waterfall.py`, `plot_peak_correlation.py`, `plot_fig3_eqtl_boxplots.R`, `plot_fig3_scatter_AG_vs_MAGE.R`, `plot_fig6_panelA1_TF_titration.py`, `plot_fig6_panelA2_chromatin_RNA_titration.py`. Calling each script with no flags reproduces the paper-figure defaults.
+
+## Repository structure
+
+This repository contains **code only**. Input data, AlphaGenome predictions, figures, and supplementary tables are not tracked — they are either downloaded via the commands in this README, regenerated by these scripts, or distributed as the paper's supplementary material.
+
+```
+AlphaGenome-TE-benchmark/
+├── README.md
+├── requirements.txt                    # pinned Python dependencies
+├── LICENSE                             # MIT
+├── .gitignore
+└── scripts/
+    ├── install_R_deps.R                # installs the R packages used below
+    ├── my_api_key.txt.example          # AlphaGenome API-key template (copy to my_api_key.txt)
+    ├── fig1_baseline_chromatin/        # ENCODE H3K27ac download/merge, AG peak prediction, GIGGLE, Panel B/C browser shots
+    ├── fig2_polymorphic_TE_example/    # polymorphic-TE insertion example: alt-seq, AG variant tracks, chromatin scoring
+    ├── fig3_polymorphic_TE_eQTLs/      # MAGE/GEUVADIS cis-eQTL pipeline, cross-cohort comparison, AG-vs-observed plots
+    ├── fig4_5_LTR10_CRISPR_comparison/ # LTR10 CRISPRi vs AG: waterfall, scatter, dumbbell, browser shots, LFC scoring
+    ├── fig6_AP1_perturbation/          # in-silico AP1 motif titration at LTR10.ATG12
+    └── generate_supp_tables/           # builders for the supplementary tables
+```
+
+`scripts/fig1_baseline_chromatin/` also holds the two shared Fig 1 entry points, `plot_peak_correlation.py` (experimental vs AG peak-signal scatter) and `predict_peak_signal_batched.py` (AG H3K27ac prediction at ENCODE peak coordinates).
+
+**Inputs that are not in this repo.** Several plotting and table-building scripts read the paper's supplementary tables (`supptables/*.tsv`) or curated input tables (`data/*.tab`) as inputs — e.g. the LTR10 waterfall reads Supp Table 11, the dumbbell reads Supp Table 10, and the eQTL plots read Supp Tables 4/5. Reproduce these by running the relevant `generate_supp_tables/` builder first, or by placing the published supplementary TSVs in a local `supptables/` directory. Large external data (ENCODE peaks/bigWigs, the Schloissnig BCFs, RNA-seq matrices) download via the commands in each section above. Run all scripts from the repository root.
+
+## Dependencies
+
+See [Software](#software) at the top of this README for the full pinned list (Python, R, and command-line tools, with versions and OS notes).
+
+## Citation
+
+*Manuscript in preparation.*
+
+## Authors
+
+Atma Ivancevic, PhD
+BioFrontiers Institute, University of Colorado Boulder
+
+## License
+
+MIT License — see [LICENSE](LICENSE).

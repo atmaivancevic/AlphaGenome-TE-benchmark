@@ -1,0 +1,15 @@
+# AlphaGenome API key — never commit (ship only the template)
+**/my_api_key.txt
+!**/my_api_key.txt.example
+
+# Python
+__pycache__/
+*.pyc
+
+# R
+.Rhistory
+.Rapp.history
+Rplots.pdf
+
+# macOS
+.DS_Store
