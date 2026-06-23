@@ -2,9 +2,9 @@
 
 ## Overview
 
-Sequence-to-function (S2F) models like AlphaGenome and Borzoi predict regulatory activity directly from DNA sequence, but their behaviour on transposable element (TE)-derived regulatory regions is largely untested. This repository benchmarks AlphaGenome against TE-derived regulatory elements across four paradigms: genome-wide H3K27ac prediction across ENCODE biosamples, a polymorphic-TE insertion example, polymorphic-TE cis-eQTLs in lymphoblastoid cohorts, and CRISPR-validated LTR10 enhancers. Each section below maps to a main or supplementary figure and gives the exact commands to reproduce every derived file from public inputs.
+Sequence-to-function (S2F) models like AlphaGenome and Borzoi predict regulatory activity directly from DNA sequence. But their behaviour on complex variants, including regulatory elements derived from transposable elements, is still untested. Here, we benchmark AlphaGenome against CRISPR-validated TE enhancers and polymorphic TE insertions/deletions. 
 
-This repository contains **code only** (see [Repository structure](#repository-structure)). Scripts are organised by figure under `scripts/` (`fig1_baseline_chromatin/`, `fig2_polymorphic_TE_example/`, `fig3_polymorphic_TE_eQTLs/`, `fig4_5_LTR10_CRISPR_comparison/`, `fig6_AP1_perturbation/`, `generate_supp_tables/`). `scripts/wip/` holds exploratory/superseded work and is **not** part of the published pipeline.
+Scripts are organised by figure under `scripts/` (`fig1_baseline_chromatin/`, `fig2_polymorphic_TE_example/`, `fig3_polymorphic_TE_eQTLs/`, `fig4_5_LTR10_CRISPR_comparison/`, `fig6_AP1_perturbation/`, `generate_supp_tables/`). 
 
 ## Software
 
